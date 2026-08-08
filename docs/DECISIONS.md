@@ -501,3 +501,329 @@ so it goes to the router.
 **A third citation never pays.** `max_citations` was set to 3 while the key's
 maximum is 2, to make this measurable rather than assumed. Every strategy allowing a
 third scores worse on exact-match than its two-citation equivalent.
+
+---
+
+# Phase 2 — Cross-encoder reranking
+
+Sweep: 3 reranker models × 2 scored-text variants × 4 pool sizes × 14 citation
+strategies = 336 rows, from 15,900 cross-encoder pairs scored once (56 min CPU)
+and cached. Data in `outputs/sweep_rerank_latest.csv`, transform diagnostics in
+`outputs/rerank_diagnostics.csv`.
+
+## D-018 — Reranking helps, but the honest comparison is the median, not the max
+
+**Date:** 2026-08-08 · **Phase:** 2 · **Status:** settled — read this before D-019..D-023
+
+**The naive comparison says reranking failed.** Phase 1's best citation-exact was
+**0.6000**; Phase 2's best is **0.5600**. Taken at face value, the cross-encoder
+made things worse.
+
+**That comparison is invalid, and the reason matters.** Phase 1 selected a maximum
+over **312** configurations; Phase 2 over **24**. A larger grid has more chances to
+draw a lucky configuration, so its maximum is biased upward. Subsampling Phase 1's
+grid down to 24 configurations, 3,000 times:
+
+| | citation-exact |
+|---|---|
+| Phase 1 max over all 312 configs | 0.6000 |
+| Phase 1 max over 24 random configs (mean of 3,000 draws) | **0.5324** |
+| Phase 2 max over its 24 configs | **0.5600** |
+
+At equal grid size, Phase 2 is ahead by +0.028. That is inside the noise band and
+proves nothing on its own.
+
+**The comparison that does hold is the median.** Holding the citation strategy
+fixed at `topk-1`:
+
+| | n configs | median | p90 | max |
+|---|---|---|---|---|
+| Phase 1 bi-encoder | 312 | **0.3600** | 0.4800 | 0.6000 |
+| Phase 2 cross-encoder | 24 | **0.5300** | 0.5600 | 0.5600 |
+
+**+17 points at the median.** The cross-encoder is not better at its luckiest; it is
+dramatically better *typically*. Its worst configuration beats the bi-encoder's
+median. That is robustness rather than a draw from the tail, and robustness is what
+survives contact with a private leaderboard.
+
+**Like-for-like on the Phase 1 provisional default** (same 53 sections, same
+`topk-1`, bi-encoder hybrid@0.7 vs cross-encoder exhaustive):
+
+| metric | Phase 1 | Phase 2 | Δ |
+|---|---|---|---|
+| citation-exact | 0.4800 | 0.5600 | **+0.0800** |
+| citation-F1 | 0.5867 | 0.6667 | **+0.0800** |
+| document F1 | 0.7333 | 0.8467 | **+0.1133** |
+| document exact | 0.6000 | 0.7000 | **+0.1000** |
+| recall@1 | 0.5000 | 0.5625 | +0.0625 |
+| inexact-citation questions | 39 / 50 | **22 / 50** | −17 |
+
+**Chosen model: `cross-encoder/ms-marco-MiniLM-L-6-v2`.** All 24 configurations are
+within the ±14.0 pp noise band, so this is a tie-break, not a win — and it is
+tie-broken on grounds that are not the score: it is the **smallest** model (~90 MB)
+and the **fastest by 5×** (19.1 pairs/s against 3.9 for bge-reranker-base and 2.9
+for mxbai-rerank-base-v1), while sitting at the top of both leaderboards.
+
+---
+
+## D-019 — Exhaustive scoring ties pooled exactly; prefer it for having fewer parts
+
+**Date:** 2026-08-08 · **Phase:** 2 · **Status:** settled
+
+**Decision.** Default to exhaustive cross-encoder scoring of all 53 sections. Keep
+the Phase 1 retriever — this decides the *default path*, not what exists.
+
+| pool | recall@1 | recall@10 | cite-exact | cite-F1 | doc F1 |
+|---|---|---|---|---|---|
+| pool10 | 0.5781 | **0.9375** | 0.5600 | 0.6733 | 0.8467 |
+| pool20 | 0.5781 | 0.9062 | 0.5600 | 0.6733 | 0.8467 |
+| pool30 | 0.5781 | 0.8906 | 0.5600 | 0.6733 | 0.8467 |
+| exhaustive | 0.5781 | 0.8906 | 0.5600 | 0.6733 | 0.8467 |
+
+**Citation-exact is identical to four decimal places across every pool size.**
+`exhaustive − pool10 = +0.0000`, against a ±0.1404 band. The structural comparison
+that was expected to survive the noise band instead produced a perfect tie.
+
+Exhaustive is preferred on the pre-committed tie-break — fewer moving parts, no
+first-stage retriever in the default path, and no recall ceiling to reason about —
+not because it scored better. It scored identically.
+
+**An unexpected result worth recording.** Exhaustive recall@10 (0.8906) is *lower*
+than pool10's (0.9375). That is not a bug: pool10's recall@10 is by construction the
+bi-encoder's own recall@10, since the reranker can only reorder ten candidates. The
+cross-encoder, scoring all 53, pushes some expected sections below rank 10 that the
+bi-encoder had inside it. **The cross-encoder sharpens the top of the ranking and
+loses some of the tail.** Since we cite one or two sections, the top is what pays —
+but this is the direct reason recall@10 was retired as the selection criterion this
+phase, and it would matter again if a later phase wanted a deep pool.
+
+---
+
+## D-020 — Scored text: no effect, same as for bi-encoders
+
+**Date:** 2026-08-08 · **Phase:** 2 · **Status:** settled
+
+Best citation-exact by model and text variant:
+
+| model | body | titled |
+|---|---|---|
+| ms-marco-MiniLM-L-6-v2 | **0.5600** | **0.5600** |
+| bge-reranker-base | 0.5000 | 0.5400 |
+| mxbai-rerank-base-v1 | 0.5000 | 0.5200 |
+
+Phase 1's conclusion was deliberately **not** carried across — a bi-encoder embeds
+the passage alone while a cross-encoder attends over question and passage jointly,
+so titles could plausibly have participated in the match differently. They did not.
+Every difference here is inside the ±14 pp band, and for the chosen model the two
+variants are exactly tied.
+
+`body` is the default: identical score, shorter sequences, marginally faster, and
+the winner's adversarial document F1 is better under `body` (0.6429) than `titled`
+(0.4286) — itself inside the band, but pointing the same way.
+
+---
+
+## D-021 — Score transform: `auto`, after a bug and a near-miss
+
+**Date:** 2026-08-08 · **Phase:** 2 · **Status:** settled
+
+**The bug, found before the sweep rather than after.** `ms-marco-MiniLM-L-6-v2`
+emits raw logits — measured range **−11.5 to +9.6, with 49 of 53 scores negative on
+a sample question**. `RelativeGap` compares `score_i / score_1`, which is
+meaningless for negatives, and its `top <= 0` short-circuit returns exactly one
+citation regardless of ratio. The entire cardinality re-sweep would have degenerated
+into `topk-1` while drawing a plausible-looking curve. Pinned by
+`tests/test_reranker.py::test_relative_gap_is_broken_on_raw_negative_logits`.
+
+**The near-miss.** The obvious fix — always apply a sigmoid — would itself have been
+wrong. Only one of the three models emits logits:
+
+| model | raw output range | scale |
+|---|---|---|
+| ms-marco-MiniLM-L-6-v2 | −11.54 … 9.58 | logits |
+| bge-reranker-base | 0.00 … 1.00 | probabilities |
+| mxbai-rerank-base-v1 | 0.00 … 0.99 | probabilities |
+
+Squashing an already-normalised score through a sigmoid compresses it toward
+0.5–0.73 and distorts exactly the ratio geometry the cardinality sweep measures. So
+the default is `auto`: sigmoid **only** when output is not already in [0, 1].
+
+**`minmax` was rejected as a universal transform** despite being the most
+scale-agnostic option. It forces the top score to exactly 1.0, which makes
+`RelativeGap(r)` and `ScoreThreshold(r)` compute the same function — silently
+erasing the distinction between two strategies under comparison.
+
+**Ordering sanity check, run on the real 50×53 matrix for all six model/text
+combinations.** Sigmoid is strictly monotonic and min-max is affine with positive
+scale, so per-query ordering must be identical under every transform. It was, in all
+six. The sweep aborts if it ever is not, because a difference there would be a
+transform bug rather than a modelling choice.
+
+**Saturation check — the concern was real but the answer is negative.**
+
+| model / text | top-1 median | top-2 median | ratio median | ratio IQR | ratio > 0.95 |
+|---|---|---|---|---|---|
+| ms-marco/titled | 0.966 | 0.440 | 0.799 | 0.552 | 0.36 |
+| ms-marco/body | 0.974 | 0.586 | 0.791 | 0.563 | 0.40 |
+| bge/titled | 0.980 | 0.409 | 0.574 | 0.628 | 0.24 |
+| mxbai/body | 0.669 | 0.428 | 0.820 | 0.270 | 0.24 |
+
+If sigmoid had saturated, ratios would cluster near 1.0 with a tiny IQR. Instead the
+IQR is 0.27–0.63 and only 18–40% of ratios exceed 0.95. **`RelativeGap` had ample
+room to discriminate.** Its failure in D-022 is therefore a real finding about the
+problem, not an artefact of the scale.
+
+---
+
+## D-022 — Cardinality is an intent decision, not a score decision
+
+**Date:** 2026-08-08 · **Phase:** 2 · **Status:** settled — this is the Phase 3 mandate
+
+**Decision.** `topk-1` remains the default. No adaptive strategy is adopted.
+
+| strategy | mean citations | cite-exact (mean) | best cite-exact | cite-F1 | doc F1 |
+|---|---|---|---|---|---|
+| **topk-1** | 1.000 | **0.5250** | **0.5600** | **0.6394** | 0.7964 |
+| gap-0.97 | 1.253 | 0.4083 | 0.4800 | 0.6086 | 0.7697 |
+| gap-0.95 | 1.356 | 0.3617 | 0.4200 | 0.5981 | 0.7604 |
+| thresh-0.9 | 1.475 | 0.3250 | 0.4000 | 0.5840 | 0.7429 |
+| gap-0.9 | 1.484 | 0.3217 | 0.3800 | 0.5819 | 0.7419 |
+| thresh-0.8 | 1.697 | 0.2617 | 0.3200 | 0.5695 | 0.7428 |
+| topk-2 | 2.000 | 0.0817 | 0.1200 | 0.5403 | 0.7535 |
+
+Best adaptive minus `topk-1` on citation-exact: **−0.0800**. Not merely inside the
+noise band — *below* the fixed baseline, and monotonically so: every strategy that
+cites more, scores worse.
+
+**This is the answer the phase was built to get, and it is the negative one.** Phase
+1 left cardinality open because bi-encoder scores were uncalibrated and the F1 curve
+was flat. Cross-encoder scores are genuinely discriminative (D-021 proves the ratio
+scale had room), and a score-gap rule still cannot separate the 36 single-citation
+questions from the 14 two-citation ones.
+
+**Consequence for Phase 3.** Whether a question needs one citation or two is not
+recoverable from retrieval scores. It is a property of what the question is *asking*
+— "what's different about X versus Y" wants two sources because it is a comparison,
+not because two sections score similarly. So the router must **classify intent**,
+not threshold scores. That is now an evidence-backed requirement rather than a
+design preference.
+
+---
+
+## D-023 — Reranking lifts adversarial questions but does not close the gap
+
+**Date:** 2026-08-08 · **Phase:** 2 · **Status:** settled — second Phase 3 mandate
+
+Document F1 by kind, Phase 1 winner vs Phase 2 winner:
+
+| kind | n | Phase 1 | Phase 2 | Δ |
+|---|---|---|---|---|
+| lookup | 29 | 0.8391 | **1.0000** | +0.1609 |
+| adversarial | 14 | 0.4500 | **0.6429** | +0.1929 |
+| **gap (lookup − adversarial)** | | **0.3891** | **0.3571** | −0.0320 |
+
+**Lookup retrieval is now perfect** — all 29 questions, correct document set. That is
+the clearest single win of the phase.
+
+**Adversarial improved by nearly as much in absolute terms (+0.193) but the gap
+barely moved**, because lookup improved too. Reading the gap alone would have been
+misleading in both directions: adversarial questions genuinely got much better, and
+they are still by far the weakest class. Adversarial citation-F1 is 0.4524 against
+lookup's near-perfect retrieval.
+
+The smallest adversarial gap anywhere in the sweep is 0.1728, but that belongs to a
+configuration with weaker lookup performance — it narrows the gap by getting worse
+at the easy questions, which is not an improvement.
+
+**Why this is structural.** Adversarial questions ask about policy boundaries whose
+sections share vocabulary across four documents — "cannot be configured or
+bypassed", "what support will never do", "what this document does not do". A
+reranker scores relevance to the question *as asked*; when a student asks how to
+disable face verification, the genuinely most relevant passage is the one about face
+verification, not the one stating the policy cannot be bypassed. **Better ranking
+cannot fix this because the ranking is not wrong — the task is.** Confirmed by Q31:
+its expected section sits at rank 39 of 53 under the cross-encoder.
+
+Adversarial questions need intent classification **before** retrieval, in Phase 3.
+
+---
+
+## D-024 — Alternate-key evidence: two independent model families bury the same four sections
+
+**Date:** 2026-08-08 · **Phase:** 2 · **Status:** EVIDENCE — the key is unchanged, the call is the author's
+
+`answer_key.yaml` was not modified. Ranks are from the winning config, exhaustive
+over 53 sections.
+
+| Q | reading | sections and ranks | verdict |
+|---|---|---|---|
+| **Q14** | primary | 01 §3 rank **1** · 10 §4 rank **45** | |
+| | *single-source-login* | 01 §3 rank **1** | **BETTER** |
+| **Q28** | primary | 07 §3 rank **2** · 08 §1 rank **15** | |
+| | *policy-only* | 07 §3 rank **2** | **BETTER** |
+| | *policy-plus-aftermath* | 07 §3 rank 2 · 07 §5 rank **18** | worse |
+| **Q31** | primary | 07 §4 rank **39** | |
+| | *prohibition-plus-boundary* | 07 §1 rank **8** · 07 §4 rank **39** | same worst-rank |
+| **Q35** | primary | 06 §3 rank **12** · 09 §4 rank **18** | |
+| | *handoff-sections* | 06 §4 rank **8** · 09 §4 rank 18 | same worst-rank |
+| | *warning-vs-termination-only* | 06 §3 rank **12** | **BETTER** |
+
+**The strongest signal is Q14.** Its first citation ranks **1st of 53**; its second
+ranks **45th of 53** — in the bottom sixth of the corpus. A cross-encoder asked
+whether "can my roommate receive my OTP and read it out to me" is answered by "A Note
+on What Support Will Never Do" places 44 sections above it.
+
+**Q28** is nearly as clear: 07 §3 at rank 2, 08 §1 at rank 15. The alternate
+`policy-plus-aftermath` (07 §5) fares *worse* at rank 18, which is itself
+informative — it suggests the re-attempt half of that question may have no good home
+in the corpus at all, consistent with doc 08's Overview scoping itself to technical
+interruptions.
+
+**Q31 is the one where the cross-encoder does not rescue any reading.** Both the
+primary and the alternate put 07 §4 at rank 39. The alternate's other section (07 §1,
+"Prohibited Actions") lands at rank 8, so if Q31 has a retrievable answer it is that
+one — but neither reading is well-supported by the model.
+
+**Why this is worth more than the Phase 1 signal.** Phase 1 flagged these four using
+a bi-encoder, which measures surface similarity — a weak witness. A cross-encoder
+models question-document relevance directly and is a genuinely different kind of
+evidence. **Both bury the same four sections, and the cross-encoder buries them
+deeper** (Q14: rank 13 → 45; Q31: rank 14 → 39). Two independent method families
+agreeing is much stronger than one method twice.
+
+This does not prove the readings wrong. Three of the four are adversarial or
+multi-doc questions where the second citation is a *policy boundary* — exactly the
+class D-023 shows rerankers systematically under-rank. The finding is genuinely
+confounded with that weakness, and both explanations remain live.
+
+---
+
+## D-025 — OPEN RISK: the grader's matching method is the largest unknown in the project
+
+**Date:** 2026-08-08 · **Phase:** 2 · **Status:** OPEN — highest-value leaderboard probe
+
+**The measurement.** Across the cardinality sweep, moving from `topk-1` to `topk-2`:
+
+| | citation-exact | citation-F1 |
+|---|---|---|
+| Phase 1 (bi-encoder) | 0.3589 → 0.0479 (**−31 pp**) | 0.4633 → 0.4642 (+0.1 pp) |
+| Phase 2 (cross-encoder) | 0.5250 → 0.0817 (**−44 pp**) | 0.6394 → 0.5403 (−9.9 pp) |
+
+**If the grader scores exact set match, citation cardinality is worth up to 44
+points. If it scores F1, it is worth ~10.** No configuration choice anywhere in this
+project comes close to that swing, and we do not know which applies.
+
+**It also changes which configuration to ship.** The top-5 configurations by
+citation-exact and by citation-F1 overlap on only **1 of 5**. This is not a tuning
+choice we can defer — the two metrics prefer different systems.
+
+**Probe design.** Two submissions differing only in `topk-1` vs `topk-2`. Under
+exact-set-match grading the scores should differ by roughly 30–44 points on the
+citation dimension; under F1 grading by under 10. This is a cleaner and more
+valuable probe than D-004 (doc extension) or D-005 (section format), and should be
+spent first.
+
+**Until it is resolved, `topk-1` is the default** — it wins on citation-exact by a
+wide margin and loses on citation-F1 only slightly, so it is the choice that is least
+bad under the unfavourable branch. That is a decision made under uncertainty, not a
+measured optimum.

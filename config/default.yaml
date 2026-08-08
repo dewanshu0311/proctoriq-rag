@@ -54,6 +54,30 @@ retrieval:
   # to the router. The full curve is in outputs/sweep_retrieval_latest.csv.
   citation_strategy: null
 
+rerank:
+  # ── PROVISIONAL — all 24 configurations were inside the +/-14.0 pp noise band ──
+  # Chosen on tie-break, not on score: smallest model (~90 MB) and 5x faster than
+  # the alternatives (19.1 pairs/s vs 3.9 bge-reranker-base, 2.9 mxbai) while
+  # sitting top of both leaderboards. See docs/DECISIONS.md D-018..D-021.
+  enabled: true
+  model: cross-encoder/ms-marco-MiniLM-L-6-v2
+  text_variant: body        # body | titled  (measured: no effect, D-020)
+  score_transform: auto     # sigmoid only when output is not already in [0,1] (D-021)
+
+  # Exhaustive scoring of all 53 sections tied pooled EXACTLY (delta 0.0000).
+  # Preferred for having fewer parts, not for scoring better. The Phase 1
+  # retriever is retained; this sets the default path only. See D-019.
+  pool_size: null           # null = score every section
+
+  # ── STILL UNSET, now with evidence ──────────────────────────────────────
+  # Phase 1 left this open because bi-encoder scores were uncalibrated. Phase 2
+  # showed cross-encoder scores ARE discriminative and a score-gap rule STILL
+  # cannot beat fixed topk-1 (best adaptive: -0.0800). Cardinality is an intent
+  # decision, not a score decision — it belongs to the Phase 3 router. topk-1 is
+  # the interim default because it is least bad under the unresolved grader
+  # question (D-022, D-025).
+  citation_strategy: topk-1   # INTERIM — pending router
+
 embedding:
   # Local, offline, no API key. Used by scripts/diagnose_sections.py and by the
   # groundedness proxy in evaluation/scorer.py.
