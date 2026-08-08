@@ -1,0 +1,97 @@
+# Alternative readings of contested answer-key entries.
+#
+# This file does NOT override answer_key.yaml. It exists so the cross-encoder can
+# vote on four entries that Phase 1 singled out, and so that vote can be reported
+# side by side with the primary reading as evidence.
+#
+# Why these four. They were the ONLY questions whose expected sections naive
+# retrieval failed to surface anywhere in the top 10, and three of the four were
+# already marked low-confidence when the key was hand-built:
+#
+#   Q14  low     10_general_support :: Section 4  unretrieved, rank 13
+#   Q28  low     08_reattempt       :: Section 1  unretrieved, rank 13
+#   Q31  medium  07_policy          :: Section 4  unretrieved, rank 14
+#   Q35  low     09_status          :: Section 4  unretrieved, rank 12
+#
+# Every entry here is validated against the corpus with the same strictness as the
+# primary key: real document, real ## header, paired correctly, lengths aligned.
+# See src/proctoriq_rag/evaluation/alternates.py.
+
+alternates:
+
+  Q14:
+    - label: single-source-login
+      docs: [01_windows_installation_login_guide]
+      sections: ["Section 3: Login Issues"]
+      rationale: >
+        The primary reading treats this as adversarial: a sympathetic excuse
+        ("my phone is broken") wrapped around a boundary request (can someone
+        else receive my OTP). But the knowledge base never explicitly forbids
+        relaying an OTP, which is what makes the adversarial classification
+        shaky. Under this reading it is ordinary login troubleshooting and
+        doc 01 Section 3 — which covers OTP delivery and registered contact
+        details — is the whole answer.
+
+  Q28:
+    - label: policy-only
+      docs: [07_permitted_prohibited_actions_policy]
+      sections: ["Section 3: Automatic Termination vs. Logged Flag"]
+      rationale: >
+        The question asks two things — is an accidental three-finger swipe a
+        logged flag or a termination, and can a re-attempt be requested for it.
+        The first half is squarely 07 Section 3. The second half may not have a
+        home: doc 08's Overview scopes that document to TECHNICAL interruptions
+        and explicitly excludes non-technical reasons, and an integrity
+        termination is not a technical interruption.
+
+    - label: policy-plus-aftermath
+      docs:
+        - 07_permitted_prohibited_actions_policy
+        - 07_permitted_prohibited_actions_policy
+      sections:
+        - "Section 3: Automatic Termination vs. Logged Flag"
+        - "Section 5: What Happens After a Flag"
+      rationale: >
+        If the re-attempt half of the question does have an answer, 07 Section 5
+        is the better candidate than doc 08 Section 1 — it covers what happens
+        after an integrity flag and routes to the Status guide, which is exactly
+        the path an integrity termination would follow.
+
+  Q31:
+    - label: prohibition-plus-boundary
+      docs:
+        - 07_permitted_prohibited_actions_policy
+        - 07_permitted_prohibited_actions_policy
+      sections:
+        - "Section 1: Prohibited Actions"
+        - "Section 4: This Policy Cannot Be Configured or Bypassed"
+      rationale: >
+        The primary reading cites only the boundary section. But Section 1
+        explicitly lists "attempting to disable, obscure, or interfere with the
+        camera" as prohibited, which answers the question directly, while
+        Section 4 answers the implied follow-up about whether a technical-issue
+        framing creates an exception. A complete answer arguably needs both.
+
+  Q35:
+    - label: handoff-sections
+      docs:
+        - 06_camera_microphone_face_verification_guide
+        - 09_status_verification_outcome_guide
+      sections:
+        - "Section 4: What This Document Does Not Cover"
+        - "Section 4: What This Document Does Not Do"
+      rationale: >
+        The question asks for a guarantee that a lighting-caused warning will be
+        ignored. Doc 06 Section 4 is the section that explicitly declines to
+        determine whether a flagged warning affects an outcome and hands off to
+        the Status guide — a closer match to the question than Section 3, which
+        explains the warning/termination distinction generally.
+
+    - label: warning-vs-termination-only
+      docs: [06_camera_microphone_face_verification_guide]
+      sections: ["Section 3: The Difference Between a Warning and a Termination"]
+      rationale: >
+        The minimal reading: answer the factual half (a single warning is logged
+        and does not end the assessment) and treat the request for a guarantee as
+        something the answer text refuses rather than something that needs its
+        own citation.
