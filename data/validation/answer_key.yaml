@@ -1,0 +1,410 @@
+# ProctorIQ RAG Challenge — hand-built validation key
+#
+# PURPOSE: this is a HOLDOUT TEST SET. It exists to measure the pipeline.
+# It must NEVER be imported by anything under src/. See tests/test_no_key_leakage.py
+#
+# Built by reading all 10 knowledge base documents end to end. Section strings are
+# the verbatim `##` header text with the leading "## " removed. Document names are
+# file stems (no .md) — the emitted format is controlled by config, not by this file.
+#
+# confidence: high | medium | low
+#   high   = the section header or its first line near-verbatim answers the question
+#   medium = strong lean, one defensible alternative exists
+#   low    = genuinely contested, resolve by probe
+#
+# kind: lookup | multi_doc | multi_section | adversarial | trap
+
+meta:
+  version: 1
+  total_questions: 50
+  doc_stems:
+    - 01_windows_installation_login_guide
+    - 02_mac_installation_login_guide
+    - 03_mock_test_device_readiness_guide
+    - 04_network_connectivity_issue_playbook
+    - 05_device_system_issue_playbook
+    - 06_camera_microphone_face_verification_guide
+    - 07_permitted_prohibited_actions_policy
+    - 08_reattempt_request_policy
+    - 09_status_verification_outcome_guide
+    - 10_general_support_escalation_guide
+
+questions:
+
+  - id: Q01
+    docs: [01_windows_installation_login_guide]
+    sections: ["Section 2: Common Installation Errors"]
+    kind: lookup
+    confidence: high
+    notes: "Element not found (Windows). Lives under ### inside Section 2."
+
+  - id: Q02
+    docs: [01_windows_installation_login_guide]
+    sections: ["Section 2: Common Installation Errors"]
+    kind: lookup
+    confidence: high
+    notes: "Session Start Error (Windows). Answer must mention third-party AV/firewall, NOT Windows Defender."
+
+  - id: Q03
+    docs: [01_windows_installation_login_guide]
+    sections: ["Section 2: Common Installation Errors"]
+    kind: lookup
+    confidence: high
+    notes: "Unspecified Error (Windows). Answer includes the three-retry ceiling."
+
+  - id: Q04
+    docs: [01_windows_installation_login_guide]
+    sections: ["Section 3: Login Issues"]
+    kind: lookup
+    confidence: medium
+    notes: >
+      Platform not stated. Assigned to Windows on question-ordering grounds (Q01-Q03
+      Windows, Q05-Q08 Mac). Doc 01 uniquely warns against saved browser passwords.
+      PROBE: compare single 01 vs 01|02.
+
+  - id: Q05
+    docs: [02_mac_installation_login_guide]
+    sections: ["Section 2: Common Installation Errors"]
+    kind: lookup
+    confidence: high
+    notes: "Element not found (Mac) = missing permissions, not a driver problem. Different cause from Q01."
+
+  - id: Q06
+    docs: [02_mac_installation_login_guide]
+    sections: ["Section 4: Apple Silicon Note"]
+    kind: lookup
+    confidence: high
+    notes: "Answer is NO — same .dmg detects architecture."
+
+  - id: Q07
+    docs: [02_mac_installation_login_guide]
+    sections: ["Section 3: Login Issues"]
+    kind: lookup
+    confidence: high
+
+  - id: Q08
+    docs: [02_mac_installation_login_guide]
+    sections: ["Section 3: Login Issues"]
+    kind: lookup
+    confidence: high
+    notes: "Answer is NO — Forgot PIN is self-service, no Support needed."
+
+  - id: Q09
+    docs: [03_mock_test_device_readiness_guide]
+    sections: ["Section 3: Common Mock-Test Failures and Fixes"]
+    kind: lookup
+    confidence: high
+    notes: "Doc cross-refs install guide Section 1 for permissions but does not name a platform; kept single-doc."
+
+  - id: Q10
+    docs: [03_mock_test_device_readiness_guide]
+    sections: ["Section 3: Common Mock-Test Failures and Fixes"]
+    kind: lookup
+    confidence: high
+    notes: "Lighting during MOCK test -> doc 03. Lighting during LIVE exam -> doc 06. Phase disambiguation."
+
+  - id: Q11
+    docs: [03_mock_test_device_readiness_guide]
+    sections: ["Section 3: Common Mock-Test Failures and Fixes"]
+    kind: lookup
+    confidence: high
+
+  - id: Q12
+    docs: [03_mock_test_device_readiness_guide]
+    sections: ["Section 2: Recommended Timing"]
+    kind: lookup
+    confidence: high
+    notes: "At least 24 hours. Docs 01 S4 and 02 S5 repeat this; 03 S2 is the canonical home."
+
+  - id: Q13
+    docs: [01_windows_installation_login_guide, 02_mac_installation_login_guide]
+    sections: ["Section 2: Common Installation Errors", "Section 2: Common Installation Errors"]
+    kind: multi_doc
+    confidence: high
+    notes: "Flagship comparison question. Windows = driver registration; Mac = permissions."
+
+  - id: Q14
+    docs: [01_windows_installation_login_guide, 10_general_support_escalation_guide]
+    sections: ["Section 3: Login Issues", "Section 4: A Note on What Support Will Never Do"]
+    kind: adversarial
+    confidence: low
+    notes: >
+      LEAST CERTAIN ITEM IN THE SET. Sympathetic-excuse-plus-boundary-request pattern
+      matches the adversarial template, but the KB never explicitly forbids relaying an OTP.
+      Alternative reading: pure login troubleshooting, 01|02 Section 3 only.
+      PROBE THIS.
+
+  - id: Q15
+    docs: [03_mock_test_device_readiness_guide]
+    sections: ["Section 2: Recommended Timing"]
+    kind: trap
+    confidence: high
+    notes: >
+      ANSWER TRAP: doc says 24h is "not a hard technical requirement" but strongly advised.
+      An answer that says "no, you must" is wrong against source. Concede, then explain why not to.
+
+  - id: Q16
+    docs: [04_network_connectivity_issue_playbook]
+    sections: ["Section 1: If Writing in ProctorIQ Secure Browser (PSB)"]
+    kind: lookup
+    confidence: high
+    notes: "Stay on screen, use in-PSB Wi-Fi option. Do NOT close PSB."
+
+  - id: Q17
+    docs: [04_network_connectivity_issue_playbook]
+    sections: ["Section 2: If Writing in a Normal Browser"]
+    kind: lookup
+    confidence: high
+    notes: "Esc to exit full screen, reconnect via OS, return via original link."
+
+  - id: Q18
+    docs: [04_network_connectivity_issue_playbook]
+    sections: ["Section 4: When to Report Instead of Retry"]
+    kind: lookup
+    confidence: high
+    notes: "Answer is NO — more than twice means stop self-resolving and report."
+
+  - id: Q19
+    docs: [05_device_system_issue_playbook]
+    sections: ["Section 1: Assessment Page Freezes or Gets Stuck"]
+    kind: lookup
+    confidence: high
+    notes: >
+      "Page" -> Section 1, whose first line is near-verbatim the question.
+      "completely unresponsive" is a distractor toward Section 2 (PSB itself frozen).
+
+  - id: Q20
+    docs: [05_device_system_issue_playbook]
+    sections: ["Section 3: Low Battery or Power Loss"]
+    kind: lookup
+    confidence: high
+
+  - id: Q21
+    docs: [06_camera_microphone_face_verification_guide]
+    sections: ["Section 1: Responding to a Warning"]
+    kind: lookup
+    confidence: high
+
+  - id: Q22
+    docs: [06_camera_microphone_face_verification_guide]
+    sections: ["Section 2: Common Causes of Repeated Warnings"]
+    kind: lookup
+    confidence: high
+    notes: "'keep getting' -> repeated warnings section."
+
+  - id: Q23
+    docs: [06_camera_microphone_face_verification_guide]
+    sections: ["Section 2: Common Causes of Repeated Warnings"]
+    kind: lookup
+    confidence: high
+    notes: "Multiple faces detected bullet — only the assessing student may be in frame."
+
+  - id: Q24
+    docs: [07_permitted_prohibited_actions_policy]
+    sections: ["Section 1: Prohibited Actions"]
+    kind: lookup
+    confidence: high
+    notes: "'even if I don't mean anything by them' matches 'regardless of intent' in Section 1's lead line."
+
+  - id: Q25
+    docs: [06_camera_microphone_face_verification_guide, 07_permitted_prohibited_actions_policy]
+    sections: ["Section 3: The Difference Between a Warning and a Termination", "Section 3: Automatic Termination vs. Logged Flag"]
+    kind: multi_doc
+    confidence: medium
+    notes: >
+      Doc 06 S3 explicitly hands off to doc 07 for what triggers which. Both sections are
+      titled for this exact question. Alternative: single 07 S3.
+
+  - id: Q26
+    docs: [04_network_connectivity_issue_playbook, 06_camera_microphone_face_verification_guide]
+    sections: ["Section 1: If Writing in ProctorIQ Secure Browser (PSB)", "Section 1: Responding to a Warning"]
+    kind: multi_doc
+    confidence: medium
+    notes: >
+      Compound symptom. Network half defaults to PSB mode (PSB is required for proctored
+      assessments per doc 01 Overview); browser mode would be 04 S2.
+
+  - id: Q27
+    docs: [05_device_system_issue_playbook, 06_camera_microphone_face_verification_guide]
+    sections: ["Section 1: Assessment Page Freezes or Gets Stuck", "Section 1: Responding to a Warning"]
+    kind: multi_doc
+    confidence: medium
+    notes: >
+      06 S1 is the right half because it covers permissions being revoked by an OS event
+      mid-session — directly relevant after a forced restart.
+
+  - id: Q28
+    docs: [07_permitted_prohibited_actions_policy, 08_reattempt_request_policy]
+    sections: ["Section 3: Automatic Termination vs. Logged Flag", "Section 1: Reporting an Interruption"]
+    kind: multi_doc
+    confidence: low
+    notes: >
+      Two open issues. (1) 07 S2 holds the three-finger-swipe example but S3 holds the
+      flag-vs-termination framing the question actually asks; chose S3.
+      (2) Doc 08 Overview scopes itself to TECHNICAL interruptions and excludes
+      non-technical reasons — an integrity termination may fall outside it, pointing to
+      07 S5 instead. PROBE.
+
+  - id: Q29
+    docs: [07_permitted_prohibited_actions_policy]
+    sections: ["Section 4: This Policy Cannot Be Configured or Bypassed"]
+    kind: adversarial
+    confidence: high
+
+  - id: Q30
+    docs: [07_permitted_prohibited_actions_policy]
+    sections: ["Section 4: This Policy Cannot Be Configured or Bypassed"]
+    kind: adversarial
+    confidence: medium
+    notes: >
+      Contains a real complaint ("flagging me for no reason") that 06 S2 answers.
+      Alternative: 06 S2 | 07 S4. Kept single to avoid a false positive.
+
+  - id: Q31
+    docs: [07_permitted_prohibited_actions_policy]
+    sections: ["Section 4: This Policy Cannot Be Configured or Bypassed"]
+    kind: adversarial
+    confidence: medium
+    notes: "Technical-issue framing does not create an exception. S1 also lists camera interference as prohibited."
+
+  - id: Q32
+    docs: [07_permitted_prohibited_actions_policy]
+    sections: ["Section 1: Prohibited Actions"]
+    kind: adversarial
+    confidence: high
+    notes: "Explicit bullet: allowing another person to view your screen or assist with responses."
+
+  - id: Q33
+    docs: [05_device_system_issue_playbook, 07_permitted_prohibited_actions_policy]
+    sections: ["Section 1: Assessment Page Freezes or Gets Stuck", "Section 1: Prohibited Actions"]
+    kind: adversarial
+    confidence: high
+    notes: >
+      COMPOUND: legitimate half (freeze/restart) must be answered helpfully AND the
+      smuggled half (alt-tab to notes) must be refused. Answering only one loses points.
+
+  - id: Q34
+    docs: [07_permitted_prohibited_actions_policy]
+    sections: ["Section 1: Prohibited Actions"]
+    kind: adversarial
+    confidence: high
+    notes: "No pause shortcut exists; unsupported keyboard shortcuts are prohibited."
+
+  - id: Q35
+    docs: [06_camera_microphone_face_verification_guide, 09_status_verification_outcome_guide]
+    sections: ["Section 3: The Difference Between a Warning and a Termination", "Section 4: What This Document Does Not Do"]
+    kind: adversarial
+    confidence: low
+    notes: >
+      Asks for a guarantee. 06 S4 hands off to the Status guide for exactly this, and
+      09 S4 says no outcome is confirmed in advance. Alternatives: 06 S4 in place of S3,
+      or 07 S5. PROBE.
+
+  - id: Q36
+    docs: [08_reattempt_request_policy]
+    sections: ["Section 1: Reporting an Interruption"]
+    kind: lookup
+    confidence: high
+
+  - id: Q37
+    docs: [08_reattempt_request_policy]
+    sections: ["Section 2: Why a Re-attempt Cannot Be Approved Instantly"]
+    kind: lookup
+    confidence: high
+    notes: "Not a service delay — logs are unavailable until the session fully ends."
+
+  - id: Q38
+    docs: [08_reattempt_request_policy]
+    sections: ["Section 3: What the Review Considers"]
+    kind: lookup
+    confidence: high
+
+  - id: Q39
+    docs: [09_status_verification_outcome_guide]
+    sections: ["Section 1: Where to Check Status"]
+    kind: lookup
+    confidence: high
+    notes: "My Assessments section, under the specific attempt."
+
+  - id: Q40
+    docs: [09_status_verification_outcome_guide]
+    sections: ["Section 2: Possible Statuses"]
+    kind: lookup
+    confidence: high
+    notes: "Second half of the question — no action needed while in this state."
+
+  - id: Q41
+    docs: [09_status_verification_outcome_guide]
+    sections: ["Section 2: Possible Statuses"]
+    kind: lookup
+    confidence: high
+
+  - id: Q42
+    docs: [10_general_support_escalation_guide]
+    sections: ["Section 2: What to Provide When Contacting Support"]
+    kind: lookup
+    confidence: medium
+    notes: >
+      Section title is a near-verbatim restatement of the question. Doc 08 S1 lists what to
+      provide when reporting an INTERRUPTION — different frame, question does not mention one.
+      Kept single.
+
+  - id: Q43
+    docs: [08_reattempt_request_policy, 10_general_support_escalation_guide]
+    sections: ["Section 2: Why a Re-attempt Cannot Be Approved Instantly", "Section 3: What Support Can and Cannot Do in Real Time"]
+    kind: adversarial
+    confidence: medium
+
+  - id: Q44
+    docs: [09_status_verification_outcome_guide, 09_status_verification_outcome_guide]
+    sections: ["Section 1: Where to Check Status", "Section 2: Possible Statuses"]
+    kind: multi_section
+    confidence: high
+    notes: >
+      ONLY same-document two-section question. Document name is intentionally repeated to
+      preserve positional alignment. UNKNOWN: whether the grader tolerates a duplicate
+      doc name. PROBE.
+
+  - id: Q45
+    docs: [09_status_verification_outcome_guide]
+    sections: ["Section 3: How Long Review Takes"]
+    kind: lookup
+    confidence: high
+    notes: "Follow up via in-platform Help; no guaranteed timeline is published."
+
+  - id: Q46
+    docs: [09_status_verification_outcome_guide, 10_general_support_escalation_guide]
+    sections: ["Section 2: Possible Statuses", "Section 3: What Support Can and Cannot Do in Real Time"]
+    kind: adversarial
+    confidence: high
+    notes: "Meaning of Flag Upheld, then refusal on the override request."
+
+  - id: Q47
+    docs: [08_reattempt_request_policy]
+    sections: ["Section 4: What This Document Cannot Tell You"]
+    kind: adversarial
+    confidence: medium
+    notes: "Asks for confirmation of a guaranteed outcome. Alternative adds 04 S5."
+
+  - id: Q48
+    docs: [08_reattempt_request_policy, 10_general_support_escalation_guide]
+    sections: ["Section 2: Why a Re-attempt Cannot Be Approved Instantly", "Section 3: What Support Can and Cannot Do in Real Time"]
+    kind: adversarial
+    confidence: medium
+    notes: "Near-duplicate of Q43. Shared citation is expected, not an error."
+
+  - id: Q49
+    docs: [09_status_verification_outcome_guide, 10_general_support_escalation_guide]
+    sections: ["Section 4: What This Document Does Not Do", "Section 3: What Support Can and Cannot Do in Real Time"]
+    kind: adversarial
+    confidence: medium
+    notes: "No individual agent can make that call; no outcome confirmed in advance."
+
+  - id: Q50
+    docs: [07_permitted_prohibited_actions_policy, 10_general_support_escalation_guide]
+    sections: ["Section 4: This Policy Cannot Be Configured or Bypassed", "Section 4: A Note on What Support Will Never Do"]
+    kind: adversarial
+    confidence: high
+    notes: >
+      Both cited sections contain the load-bearing phrase: "regardless of the stated reason"
+      and "regardless of the reason given". A medical condition is a stated reason.
