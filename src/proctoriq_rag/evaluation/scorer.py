@@ -125,6 +125,29 @@ class ScoreReport:
         """Questions where the document set or the citation pairs are wrong."""
         return [q for q in self.per_question if not q.is_perfect]
 
+    def breakdown(self, attribute: str = "kind") -> dict[str, dict[str, float]]:
+        """Group the exact dimensions by ``kind`` or ``confidence``.
+
+        The headline number hides the trade that matters. Multi-source questions
+        are where citation accuracy is genuinely hard, and a cardinality rule
+        tuned on the 36 single-citation questions can win overall while quietly
+        destroying the 14 that need two citations. This is the table that shows it.
+        """
+        groups: dict[str, list[QuestionScore]] = {}
+        for question in self.per_question:
+            groups.setdefault(getattr(question, attribute), []).append(question)
+
+        return {
+            name: {
+                "n": float(len(scores)),
+                "doc_f1": float(np.mean([s.retrieval.f1 for s in scores])),
+                "doc_exact": float(np.mean([s.retrieval.exact_match for s in scores])),
+                "cite_f1": float(np.mean([s.citation.f1 for s in scores])),
+                "cite_exact": float(np.mean([s.citation.exact_match for s in scores])),
+            }
+            for name, scores in sorted(groups.items())
+        }
+
     def to_dataframe(self) -> pd.DataFrame:
         return pd.DataFrame(
             [
