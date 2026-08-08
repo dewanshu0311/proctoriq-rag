@@ -263,3 +263,241 @@ everything we rely on (members compare equal to their string values). Kaggle's
 runtime is 3.11 and remains compatible with a 3.10 floor.
 
 **Evidence.** `tests/test_config.py::test_section_format_members_compare_as_strings`.
+
+---
+
+# Phase 1 — Retrieval baseline
+
+Sweep: 312 retrieval configurations (12 chunkers × 3 embedding models × dense /
+sparse / hybrid×3α × 2 aggregators) × 14 citation strategies = 4,368 scored rows.
+Full data in `outputs/sweep_retrieval_latest.csv`.
+
+## D-011 — Selection is on recall@10, not citation F1
+
+**Date:** 2026-08-08 · **Phase:** 1 · **Status:** settled
+
+**Decision.** Configurations are ranked by section-level recall@10, with recall@5
+as the tie-break. Citation F1 and exact-match are reported on every row but are
+diagnostic this phase, not the objective.
+
+**Reasoning.** Phase 2 adds a cross-encoder that reorders the candidate pool. A
+config chosen for rank-1 precision is optimised for a pipeline we are not
+building — the reranker can fix ordering, but it cannot retrieve something that
+was never in the pool. What Phase 1 owes Phase 2 is the right section *present*,
+not the right section *first*.
+
+**Evidence.** At the chosen config, 39 of 50 questions have inexact citations —
+but **35 of those 39 have every expected section already inside the top 10**. Only
+4 need better retrieval rather than better ordering. Optimising citation F1 now
+would have traded away pool quality to chase the 35 that reranking gets for free.
+
+---
+
+## D-012 — Almost nothing in the sweep is distinguishable on n=50
+
+**Date:** 2026-08-08 · **Phase:** 1 · **Status:** settled — the central finding
+
+**Decision.** No single "winning" configuration is declared. A shortlist of robust
+configurations is reported instead, and `config/default.yaml` is marked
+**provisional**.
+
+**The numbers.** Of 312 retrieval configurations:
+
+| | count |
+|---|---|
+| tied at the top recall@10 (0.9375) | **36** |
+| within one noise band (±6.1 pp) of it | **217** |
+
+The noise band is two standard errors of a binomial proportion over the 64
+expected sections: `2 × sqrt(p(1-p)/64) ≈ 0.0605`. Differences smaller than that
+are not measurable on this sample.
+
+**Per-dimension best recall@10, all 50 questions:**
+
+| Dimension | Values | Best recall@10 |
+|---|---|---|
+| Chunker | section / rec256 / rec400 / rec512 / rec768 / subsection | **0.9375 for all six** |
+| Model | MiniLM-L6 / bge-small / mpnet-base | 0.9375 / 0.9219 / 0.9375 |
+| Mode | dense / hybrid / sparse | 0.9375 / 0.9375 / 0.8125 |
+| Header in text | on / off | 0.9375 / 0.9375 |
+| Aggregator | max / sum | 0.9375 / 0.9375 |
+
+Every chunker ties. Both header settings tie. Both aggregators tie. Two of three
+models tie. **The only dimension that separates at all is retriever mode**, and
+only because sparse-alone is clearly worse.
+
+**Why this is written down rather than quietly resolved by picking the top row.**
+4,368 rows scored against 50 questions is an overfitting machine. The top row beats
+its neighbours by roughly 2 pp on a metric whose resolution is about 6 pp. Picking
+it would be selecting noise and calling it a decision. The `delta_vs_nbhd` column
+exists to make that visible: the best configs sit on plateaus with Δ between +0.008
+and +0.023, entirely inside the noise band.
+
+**Consequence for the demo.** The competition asks for at least 2 chunk sizes and 2
+embedding models to be tested with a justified choice. We tested five chunking
+strategies and three models. The justified finding is that **on this corpus, at this
+sample size, chunk size does not matter** — a stronger result than a fabricated
+one-point winner, because it is reproducible.
+
+---
+
+## D-013 — Chunk size is a weak lever on this corpus, and we knew why in advance
+
+**Date:** 2026-08-08 · **Phase:** 1 · **Status:** settled
+
+**Decision.** `SectionChunker` (no split) is the provisional default.
+
+**Reasoning, established before running anything.** Section bodies are min 134 /
+median 347 / mean 432 / max 1317 characters. Only **5 of 53** sections exceed 768,
+so a 768-character window leaves 48 sections untouched.
+
+| chunk_size | chunks | vs. 53 |
+|---|---|---|
+| 256 | 129 | 2.4× |
+| 400 | 84 | 1.6× |
+| 512 | 72 | 1.4× |
+| 768 | 59 | 1.1× |
+| no-split (section) | 53 | — |
+| subsection | 61 | 1.2× |
+
+All six achieve identical best recall@10 (0.9375). `SectionChunker` is preferred
+because retrieval unit and citation unit coincide exactly — there is no aggregation
+step that can go wrong — and it has the highest mean neighbourhood score (0.9297).
+
+**The disappointment worth recording.** `SubsectionChunker` was the strong prior
+going in: all 13 `###` subsections sit in the 5 largest sections, which serve the
+densest lookup region in the test set (Q01–Q03, Q05, Q07–Q11, Q13). Splitting
+should have sharpened retrieval on the three Windows install errors. It did not
+move recall@10 at all. The hypothesis was reasonable and it was wrong — the corpus
+is small enough that a 1317-character passage is not actually hard to match.
+
+---
+
+## D-014 — Hybrid ties dense; sparse alone is clearly worse
+
+**Date:** 2026-08-08 · **Phase:** 1 · **Status:** settled
+
+**Decision.** Provisional default is hybrid with `alpha=0.7` (70% dense).
+
+**Evidence.**
+
+| Mode | best recall@10 | best recall@5 | best recall@1 | mean recall@10 |
+|---|---|---|---|---|
+| dense | 0.9375 | 0.8281 | **0.6250** | 0.8991 |
+| hybrid | 0.9375 | **0.8438** | 0.5938 | 0.8992 |
+| sparse (BM25) | 0.8125 | 0.7344 | 0.4531 | 0.7760 |
+
+**Did lexical retrieval earn its place?** Partially, and less than expected. BM25
+was added because several questions turn on strings the corpus uses verbatim —
+*Session Start Error*, *Element not found*, *Under Verification*, *Resolved — Flag
+Upheld*. Alone it is 12 points worse at recall@10. Blended it buys about 1.6 pp at
+recall@5 over pure dense while costing about 3 pp at recall@1 — both inside the
+noise band. **The honest reading: hybrid is not measurably better than dense here.**
+It is kept as the default because the α sweep is smooth and 0.7 sits mid-plateau,
+but this is a coin-flip dressed as a decision and should be revisited when the
+reranker changes what the pool is for.
+
+---
+
+## D-015 — The header-in-text variable, resolved as "no effect"
+
+**Date:** 2026-08-08 · **Phase:** 1 · **Status:** settled
+
+**Decision.** Keep `include_header_in_text: true`.
+
+**Reasoning.** Phase 0's diagnostic embedded `section_title + body` without ever
+testing whether the header helped, leaving an unexplained variable in the baseline.
+Sweeping it: best recall@10 is 0.9375 either way; mean recall@10 is 0.8912 with
+headers vs 0.8881 without, and mean recall@5 is 0.7919 vs 0.7766. A consistent but
+tiny lean toward headers, far inside the noise band.
+
+Kept on because it is marginally ahead on the mean and because it makes chunk text
+self-describing when a human reads it. **Not** because it was shown to matter.
+
+---
+
+## D-016 — The two leaderboards agree, and the tie-aware check is why we know
+
+**Date:** 2026-08-08 · **Phase:** 1 · **Status:** settled
+
+**Decision.** Configuration selection is not an artefact of the uncertain key
+entries. 30 configurations are top-tier on both the all-50 and
+high-confidence-only leaderboards.
+
+**A reporting bug worth recording, because it nearly produced a false conclusion.**
+The first version compared the *top-10 rows by identity* between the two
+leaderboards and reported **0/10 overlap — "MATERIAL DISAGREEMENT"**. That was
+wrong. With 36 configs tied at exactly the same recall@10, the sort order among
+them is arbitrary, so comparing row identity measures the sort's tie-breaking
+rather than agreement. The corrected check compares the *sets* of configs tied at
+the maximum:
+
+| | all-50 | high-confidence only |
+|---|---|---|
+| configs tied at max | 36 | 76 |
+| max recall@10 | 0.9375 | **1.0000** |
+| top-tier on both | 30 (Jaccard 0.366) | |
+
+**The finding that matters more than the agreement.** On the 36 high-confidence
+questions, 76 configurations achieve **recall@10 = 1.000** — every expected section
+retrieved, no misses at all. All four genuine retrieval misses on the full set are
+**Q14, Q28, Q31, Q35**: the three low-confidence entries plus one medium.
+
+| Question | confidence | expected section not retrieved | rank |
+|---|---|---|---|
+| Q14 | low | 10_general_support · Section 4: A Note on What Support Will Never Do | 13 |
+| Q28 | low | 08_reattempt · Section 1: Reporting an Interruption | 13 |
+| Q31 | medium | 07_policy · Section 4: This Policy Cannot Be Configured or Bypassed | 14 |
+| Q35 | low | 09_status · Section 4: What This Document Does Not Do | 12 |
+
+Retrieval is not the bottleneck on the questions the key is sure about. The
+residual misses sit exactly where the key itself is uncertain — corroborating the
+Phase 0 diagnostic, which already showed naive retrieval disagreeing with the key
+on those same entries. That is evidence about the key, and those four entries
+should be re-read before any effort is spent making retrieval find them.
+
+---
+
+## D-017 — No citation cardinality policy is chosen in Phase 1
+
+**Date:** 2026-08-08 · **Phase:** 1 · **Status:** OPEN — belongs to the router
+
+**Decision.** The full cardinality curve is reported; `citation_strategy` is left
+`null` in config.
+
+**The curve** (averaged across all retrieval configs; `best cite F1` is the best
+single config at that strategy):
+
+| strategy | mean citations | doc F1 | cite F1 | cite exact | best cite F1 |
+|---|---|---|---|---|---|
+| topk-1 | 1.000 | 0.6323 | 0.4633 | **0.3589** | **0.7333** |
+| gap-0.97 | 1.167 | 0.6418 | 0.4734 | 0.3227 | 0.7047 |
+| thresh-0.9 | 1.256 | 0.6475 | 0.4800 | 0.2963 | 0.7013 |
+| gap-0.95 | 1.291 | 0.6474 | 0.4789 | 0.2963 | 0.7013 |
+| thresh-0.85 | 1.416 | 0.6544 | 0.4847 | 0.2579 | 0.6813 |
+| thresh-0.8 | 1.568 | **0.6555** | **0.4848** | 0.2221 | 0.6767 |
+| gap-0.9 | 1.607 | 0.6557 | 0.4798 | 0.2232 | 0.6560 |
+| gap-0.85 | 1.883 | 0.6495 | 0.4690 | 0.1634 | 0.6533 |
+| topk-2 | 2.000 | **0.6695** | 0.4642 | **0.0479** | 0.5900 |
+| thresh-0.55 | 2.297 | 0.6418 | 0.4574 | 0.0984 | 0.5893 |
+
+**The shape, which is the point.** Document F1 rises monotonically with citation
+count (0.632 → 0.670) because extra citations can only add recall on the doc set.
+Citation exact-match *collapses* in the opposite direction (0.359 → 0.048) because
+every surplus citation breaks exactness on the 36 single-citation questions. Cite
+F1 is nearly flat across the whole range — it peaks at 0.485 around 1.4–1.6 mean
+citations and never varies by more than 0.03.
+
+**Why no fixed rule is adopted.** 36 of 50 questions want one citation and 14 want
+two. `topk-1` guarantees a recall miss on 14; `topk-2` guarantees a precision hit on
+36 and drops exact-match by a factor of seven. The adaptive strategies sit between
+the two without escaping the trade — the flatness of cite F1 across a 2.3× range of
+mean citations *is* the evidence that no fixed cardinality is right.
+
+Locking a threshold now on aggregate F1 would bake in the average and lose both
+tails. This is the one dimension where the correct answer is provably per-question,
+so it goes to the router.
+
+**A third citation never pays.** `max_citations` was set to 3 while the key's
+maximum is 2, to make this measurable rather than assumed. Every strategy allowing a
+third scores worse on exact-match than its two-citation equivalent.

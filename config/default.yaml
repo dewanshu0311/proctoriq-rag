@@ -30,6 +30,30 @@ submission:
 
   separator: "|"
 
+retrieval:
+  # ── PROVISIONAL — NOT a Phase 1 conclusion ──────────────────────────────
+  # 217 of 312 retrieval configurations are within one noise band of the top
+  # recall@10 score on n=50, and 36 tie at it exactly. Nothing here was chosen
+  # because it "won"; these are defaults picked from the broadest plateau so
+  # Phase 2 has somewhere to start. Revisit once a reranker exists — a config
+  # selected for pool quality is not necessarily the one to keep afterwards.
+  #
+  # See docs/DECISIONS.md D-011..D-016.
+  chunker: section          # section | recursive | subsection
+  chunk_size: null          # only used when chunker == recursive
+  include_header_in_text: true
+  model: sentence-transformers/all-MiniLM-L6-v2
+  mode: hybrid              # dense | sparse | hybrid
+  alpha: 0.7                # hybrid weight on dense; 1.0 = pure dense
+  aggregator: max           # max | sum
+  top_n: 15
+
+  # ── DELIBERATELY UNSET ──────────────────────────────────────────────────
+  # Citation cardinality is not decided in Phase 1. 36 of 50 questions want one
+  # citation and 14 want two; no fixed rule serves both tails, so this belongs
+  # to the router. The full curve is in outputs/sweep_retrieval_latest.csv.
+  citation_strategy: null
+
 embedding:
   # Local, offline, no API key. Used by scripts/diagnose_sections.py and by the
   # groundedness proxy in evaluation/scorer.py.
