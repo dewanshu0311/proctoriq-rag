@@ -1,0 +1,56 @@
+# ── Competition data ───────────────────────────────────────────────────────
+# The competition rules prohibit redistributing the provided data, so the raw
+# knowledge base, test.csv and sample_submission.csv are never committed.
+data/raw/
+niat-masterclass-building-optimizing-rag-challenge/
+
+# data/validation/answer_key.yaml is OUR OWN hand-built holdout, not competition
+# data, and IS committed. It is not matched by anything above — listed here so the
+# intent is explicit to the next reader.
+#   data/validation/answer_key.yaml  -> tracked
+
+# ── Secrets ────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*_api_key*
+secrets.yaml
+kaggle.json
+
+# ── Outputs ────────────────────────────────────────────────────────────────
+# Generated submissions are build artefacts, not source.
+outputs/
+submission.csv
+
+# ── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# ── Models / caches ────────────────────────────────────────────────────────
+.cache/
+models/
+.sentence_transformers/
+
+# ── Working-copy leftovers ─────────────────────────────────────────────────
+# The pre-scaffold copies these were built from. The tracked originals now live
+# at data/validation/answer_key.yaml and docs/.
+/answer_key.yaml
+/PHASE_0_CLAUDE_CODE_PROMPT.md
+.claude/
+
+# ── Editors / OS ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.ipynb_checkpoints/

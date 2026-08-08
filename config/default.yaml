@@ -1,0 +1,39 @@
+# ProctorIQ RAG — default configuration.
+#
+# NOTE ON WHAT IS DELIBERATELY ABSENT: there is no path to the answer key here.
+# The answer key is a holdout test set. Nothing under src/ may know it exists —
+# only scripts/ and tests/ name it. See tests/test_no_key_leakage.py.
+
+paths:
+  kb_dir: data/raw/kb
+  test_csv: data/raw/test.csv
+  sample_submission: data/raw/sample_submission.csv
+  submission_out: outputs/submission.csv
+
+submission:
+  # ── KNOWN UNKNOWN #1 ────────────────────────────────────────────────────
+  # Does cited_docs carry the .md extension? sample_submission.csv omits it;
+  # the competition description says "filename". Unresolved — leaderboard probe.
+  # false -> "01_windows_installation_login_guide"
+  # true  -> "01_windows_installation_login_guide.md"
+  doc_extension: false
+
+  # ── KNOWN UNKNOWN #2 ────────────────────────────────────────────────────
+  # What form does cited_sections take? The header is
+  #   "## Section 2: Common Installation Errors"
+  # full_header -> "Section 2: Common Installation Errors"
+  # number_only -> "Section 2"
+  # title_only  -> "Common Installation Errors"
+  # sample_submission.csv shows "Section 1", but that file is dummy data.
+  # Unresolved — leaderboard probe. Default is the most informative variant.
+  section_format: full_header
+
+  separator: "|"
+
+embedding:
+  # Local, offline, no API key. Used by scripts/diagnose_sections.py and by the
+  # groundedness proxy in evaluation/scorer.py.
+  #
+  # The grader's own embedding model is UNKNOWN. See docs/DECISIONS.md — our
+  # groundedness numbers are comparable to each other, not to the real score.
+  diagnostic_model: sentence-transformers/all-MiniLM-L6-v2
