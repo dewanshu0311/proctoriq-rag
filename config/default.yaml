@@ -78,6 +78,27 @@ rerank:
   # question (D-022, D-025).
   citation_strategy: topk-1   # INTERIM — pending router
 
+generation:
+  # Extractive is the default and carries the probe submissions. It beat every
+  # generated template on the groundedness proxy (0.7782 vs 0.7102 best generated),
+  # is 80x faster, and is deterministic — which the probe design structurally
+  # requires. See docs/DECISIONS.md D-026, D-027.
+  mode: extractive          # extractive | generative
+
+  # answer_from=top1 keeps answer_text identical when only the citation
+  # configuration changes, which is what makes probe 5 a clean citation-only
+  # experiment. Cost: 6 multi-source questions answer from one section. See D-028.
+  answer_from: top1         # top1 | cited
+  max_answer_chars: 700
+
+  # Used only when mode=generative. structured-steps scored highest among the
+  # three templates; answer-first-explained was designed for adversarial questions
+  # and came last on them (D-026).
+  template: structured-steps
+  groq_model: llama-3.1-8b-instant
+  temperature: 0.0
+  rotate_keys: false        # single key by default (D-031)
+
 embedding:
   # Local, offline, no API key. Used by scripts/diagnose_sections.py and by the
   # groundedness proxy in evaluation/scorer.py.

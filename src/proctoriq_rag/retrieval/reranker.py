@@ -34,6 +34,7 @@ which can flatten ratio-based rules for a completely different reason.
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol, Sequence, runtime_checkable
@@ -57,6 +58,41 @@ RERANKER_MODELS: tuple[str, ...] = (
     "BAAI/bge-reranker-base",                 # ~3.9 pairs/s, logits
     "mixedbread-ai/mxbai-rerank-base-v1",     # ~2.9 pairs/s, ALREADY [0,1]
 )
+
+
+#: Directories searched for a pre-downloaded copy of the reranker, before falling
+#: back to the HuggingFace hub. Kaggle competitions sometimes run notebooks with
+#: internet disabled, in which case the model has to arrive as an attached
+#: Dataset instead — this is what makes that possible without a code change.
+#: Override with PROCTORIQ_MODEL_DIR.
+LOCAL_MODEL_ROOTS: tuple[str, ...] = (
+    "/kaggle/input",
+    "/kaggle/working/models",
+)
+
+
+def resolve_model_source(model_name: str) -> str:
+    """Return a local directory holding ``model_name`` if one exists, else the name.
+
+    Looks for a directory whose name matches the model's final path component,
+    e.g. ``ms-marco-MiniLM-L-6-v2``. Falls through to the hub name unchanged when
+    nothing local is found, so behaviour is identical when internet is available.
+    """
+    override = os.environ.get("PROCTORIQ_MODEL_DIR", "").strip()
+    short = model_name.rsplit("/", 1)[-1]
+
+    candidate_roots = [Path(override)] if override else [Path(r) for r in LOCAL_MODEL_ROOTS]
+    for root in candidate_roots:
+        if not root.is_dir():
+            continue
+        direct = root / short
+        if (direct / "config.json").exists():
+            return str(direct)
+        for child in root.iterdir():
+            nested = child / short
+            if child.is_dir() and (nested / "config.json").exists():
+                return str(nested)
+    return model_name
 
 
 @runtime_checkable
@@ -245,7 +281,7 @@ class CrossEncoderReranker:
         if self._model is None:
             from sentence_transformers import CrossEncoder
 
-            self._model = CrossEncoder(self.model_name)
+            self._model = CrossEncoder(resolve_model_source(self.model_name))
         return self._model
 
     @property

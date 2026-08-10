@@ -827,3 +827,241 @@ spent first.
 wide margin and loses on citation-F1 only slightly, so it is the choice that is least
 bad under the unfavourable branch. That is a decision made under uncertainty, not a
 measured optimum.
+
+---
+
+# Phase 3 — Generation, notebook export, probe sequence
+
+## D-026 — Extractive answers beat every generated template on groundedness
+
+**Date:** 2026-08-10 · **Phase:** 3 · **Status:** settled
+
+All 50 questions, citations held constant so only the answer text varies. Groq
+`llama-3.1-8b-instant`, temperature 0.
+
+| template | groundedness | mean chars | mean words | padding hits | empty | seconds |
+|---|---|---|---|---|---|---|
+| **extractive** (no LLM) | **0.7782** | 426 | 66 | 0 | 0 | **3.1** |
+| structured-steps | 0.7102 | 319 | 51 | 0 | 0 | 259.9 |
+| terse-extractive | 0.7023 | 316 | 51 | 0 | 0 | 215.9 |
+| answer-first-explained | 0.6856 | 300 | 48 | 0 | 0 | 271.1 |
+
+Per kind:
+
+| template | lookup | adversarial | multi_doc | trap |
+|---|---|---|---|---|
+| **extractive** | **0.8493** | **0.6753** | 0.6431 | **0.8906** |
+| structured-steps | 0.7623 | 0.6099 | **0.6751** | 0.6629 |
+| terse-extractive | 0.7411 | 0.6302 | 0.6656 | 0.7983 |
+| answer-first-explained | 0.7324 | 0.5690 | 0.6945 | 0.7828 |
+
+**!! D-007 CAVEAT, and it applies to every number above.** Groundedness is cosine
+similarity against the key's cited section bodies using a *local* embedding model.
+The grader's model is unknown. These figures rank templates against each other and
+say nothing about leaderboard score. 0.7782 does not mean "78 on that dimension".
+
+**Decision.** Extractive is the default answerer. It wins groundedness by 6.8
+points over the best generated template, is 80× faster, and is deterministic —
+which the probe sequence structurally requires.
+
+**Why the result is unsurprising in hindsight.** Groundedness is measured as
+similarity to the source excerpt, and an extractive answer *is* the source excerpt
+with markdown stripped. The LLM can only move away from that text.
+
+**A design intuition that was wrong.** `answer-first-explained` was written
+specifically for the 14 adversarial questions, on the theory that a reasoned
+refusal scores better than a bare one. It came **last overall and last on
+adversarial** (0.5690, versus extractive's 0.6753). Structuring an answer as
+"direct answer, then reasoning" rewrites the source's phrasing, and rewriting is
+exactly what similarity scoring punishes. Among generated templates,
+`structured-steps` is the default — it scored highest overall and on `multi_doc`.
+
+**The style contract worked.** Zero padding phrases across all 150 generated
+answers. That part of the prompt is doing its job; the loss is from paraphrase,
+not from filler.
+
+---
+
+## D-027 — Extractive carries the probes, generative stays in the pipeline
+
+**Date:** 2026-08-10 · **Phase:** 3 · **Status:** settled
+
+**Decision.** Probe submissions use extractive mode. Generative mode is built,
+tested, and available by config flag.
+
+**Reasoning.** Probes require `answer_text` byte-identical across submissions, so
+that when only the citation columns change the whole delta is attributable to the
+35% citation half. An LLM cannot guarantee that across separate Kaggle runs even
+at temperature 0 — sampling, tokeniser and serving-side changes all break it.
+
+Generative mode is not vestigial: the competition rules require Groq to be used,
+and once the format questions are resolved the answer half (50% of the score) is
+where the remaining headroom is. It is kept behind a flag rather than deleted.
+
+**Evidence.** `scripts/run_pipeline.py --probes` hashes the answer set of every
+probe variant and refuses to proceed unless all six hashes match. They do:
+`b925179f4df75b6d` for all six.
+
+---
+
+## D-028 — Answer sourcing is decoupled from citation cardinality
+
+**Date:** 2026-08-10 · **Phase:** 3 · **Status:** settled
+
+**Decision.** `ANSWER_FROM = "top1"` — the answer is built from the top-ranked
+section regardless of how many sections are cited.
+
+**Reasoning.** Probe 5 changes `topk-1` → `topk-2`. If the answer were built from
+the cited sections, that probe would change the citation columns *and* the answer
+text, and its delta would mix a citation effect with an answer effect — destroying
+the one measurement the probe exists to make. D-025 is the largest unknown in the
+project and it cannot be resolved with a confounded experiment.
+
+**The cost, stated plainly.** For genuinely two-source questions — the 5
+`multi_doc` and 1 `multi_section` entries — the answer draws on one section
+instead of two and is less complete. That is 6 of 50 questions paying a small
+answer-quality cost so that 35% of the score can be measured. `answer_from="cited"`
+is implemented and tested for Phase 4 to revisit once the formats are settled.
+
+---
+
+## D-029 — The notebook inlines real source; equivalence is tested, not assumed
+
+**Date:** 2026-08-10 · **Phase:** 3 · **Status:** settled
+
+**Decision.** `scripts/export_notebook.py` reads the actual module files and
+inlines them with intra-package imports stripped. Environment-bound values (repo
+paths) are rewritten; nothing is duplicated by hand.
+
+**Why not copy-paste.** A hand-maintained notebook copy drifts from the tested
+library within days, and the drift is invisible until a submission scores
+differently from local measurements.
+
+**The guarantee.** `tests/test_notebook_export.py` executes the notebook's own
+`format_doc` and `format_section` across all 53 headers × 3 section formats × 2
+extension settings and asserts byte-identical output against the library's. A
+slow-marked test runs the whole notebook against a mocked `/kaggle/input` tree and
+scores the result: it must reproduce the Phase 2 numbers exactly. It does —
+cite-exact 0.5600, cite-F1 0.6667, doc-F1 0.8467, doc-exact 0.7000.
+
+**Two bugs this process caught, both of which would have shipped:**
+
+1. `citation.py` annotates `Sequence[ScoredChunk]`, and `ScoredChunk` lives in the
+   retriever, which the notebook does not otherwise need. Stripping
+   `from __future__ import annotations` made that annotation evaluate at class-
+   definition time and the notebook died with `NameError`. Fixed by inlining the
+   retriever too — its faiss and BM25 imports are lazy and never fire on the
+   exhaustive path.
+2. The export-boundary leakage check initially failed the build on `Q01`, `Q02`,
+   `Q03` — appearing in the *loader's docstring* explaining why three questions
+   share one section. Exactly the D-003 lesson repeating: the check now walks the
+   AST and exempts docstrings, because prose cannot branch. Then the first fix for
+   (1) reintroduced it by prepending the future import *above* the docstring,
+   displacing it from `body[0]` so it stopped being recognised as a docstring at
+   all. The import is now inserted after the docstring.
+
+**The export boundary is a leakage boundary.** The build fails if any answer-key
+content, alternates content, package import, or `Q01`–`Q50` literal in executable
+code reaches the notebook — the same guarantee as `tests/test_no_key_leakage.py`,
+enforced where the artefact leaves the repo. There is a test proving the check
+fires on a violating notebook and another proving it permits explanatory
+docstrings.
+
+---
+
+## D-030 — The Q15 nuance trap is currently failed, and the cause is retrieval
+
+**Date:** 2026-08-10 · **Phase:** 3 · **Status:** OPEN — Phase 4 mandate
+
+**The trap.** Doc 03 §2 says the 24-hour mock-test window is *"not a hard
+technical requirement"* but is strongly advised. An answer that flattens this into
+"no, you must" contradicts the passage it cites.
+
+**What the reranker actually returns for that question:**
+
+| rank | score | section |
+|---|---|---|
+| 1 | 0.9987 | 01_windows §4: Before You Begin |
+| 2 | 0.9974 | 02_mac §5: Before You Begin |
+| **3** | **0.9858** | **03_mock_test §2: Recommended Timing** ← expected |
+
+The top three are separated by 1.3%. And the nuance exists **only** in the
+rank-3 section: doc 01 §4 says *"Always complete a mock test at least 24 hours
+before"* with no qualifier at all.
+
+**So the answers:**
+
+- extractive → *"Always complete a mock test at least 24 hours before your actual
+  assessment slot..."* — faithful to the passage it was given, but that passage is
+  the wrong one and contains no nuance.
+- `answer-first-explained` → *"You cannot just do your mock test right before your
+  actual exam slot instead of a day ahead."* — a flat prohibition, and worse:
+  **that sentence appears in no source passage at all.** The template's
+  "first sentence gives the direct answer" instruction manufactured a rule.
+
+**The finding.** This is a retrieval failure, not a prompt failure. No prompt can
+preserve a nuance absent from the passage it is handed. The style contract's
+anti-flattening instruction is correct and should stay, but it cannot fix this.
+
+**Phase 4 implication.** The failure mode is a near-tie at the top of the ranking
+where the semantically-correct section loses by 1.3% to a document that repeats
+the same advice without its qualifier. Docs 01 §4 and 02 §5 are cross-references
+*to* doc 03; doc 03 §2 is the canonical home. A router that recognises phase
+(installation vs mock-test readiness) would disambiguate this directly. Recorded
+as evidence for the routing layer, not as a prompt change.
+
+---
+
+## D-031 — Single Groq key by default; rotation is opt-in
+
+**Date:** 2026-08-10 · **Phase:** 3 · **Status:** settled
+
+**Decision.** `GROQ_API_KEY` alone is the default path. Nine keys are available
+locally and rotation exists behind `GROQ_ROTATE_KEYS=1`, exercised only if a limit
+is actually hit.
+
+**Reasoning.** Fifty questions is fifty calls, comfortably inside one free-tier
+key. Rotation is complexity with its own failure mode — a rotating client can mask
+a genuinely bad key by silently succeeding on the next one, turning a loud error
+into a quiet mystery. Fewer moving parts in the artefact that gets graded.
+
+**Security note.** The keys were pasted into a chat transcript and must be treated
+as disposable. `.env` is gitignored and no key appears in any committed file or in
+the exported notebook, which reads its key from Kaggle Secrets. Rotate at
+`console.groq.com` when the competition ends.
+
+---
+
+## D-032 — The probe sequence is a dependency chain
+
+**Date:** 2026-08-10 · **Phase:** 3 · **Status:** OPEN — awaiting submissions
+
+Full plan in [`PROBES.md`](PROBES.md); results in
+[`SUBMISSION_LOG.md`](SUBMISSION_LOG.md).
+
+**The sequencing constraint.** Citation accuracy is scored on `(doc, section)`
+pairs. If the document format is wrong, citation scores zero *regardless of the
+section string*. Running the section probes against a broken document baseline
+would show near-zero delta for **both** section variants and read as "section
+format doesn't matter" — a false negative that would permanently cost the 15%
+citation dimension. So each probe adopts the winner of the previous one as its new
+baseline, and probe 5 runs only against a fully format-corrected baseline.
+
+**Predicted deltas, computed before any submission:**
+
+| probe | change | predicted |
+|---|---|---|
+| 2 | `.md` extension | −27 / +27 / ~0 (fuzzy) |
+| 3, 4 | section format | −10 each if `full_header` is right |
+| 5 | `topk-2` | **−12.8** exact-match vs **−3.4** F1 |
+| 6 | `topk-3` | **−19.2** exact-match vs **−6.9** F1 |
+
+**Probe 6 is pre-registered with a decision rule** so the call cannot be made
+after seeing the number: run it only if probe 5 lands in `(−9.0, −6.0)`, the band
+where the two hypotheses are not separable given roughly 20 public questions.
+`topk-3` drives citation-exact to exactly **0.0000**, widening the separation from
+9.4 to 12.3 points.
+
+**Stating predictions in advance is the entire point.** A −7 observation is
+uninterpretable unless you already know whether the hypotheses predicted −3 or
+−13.
