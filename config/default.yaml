@@ -11,27 +11,29 @@ paths:
   submission_out: outputs/submission.csv
 
 submission:
-  # ── KNOWN UNKNOWN #1 ────────────────────────────────────────────────────
-  # Does cited_docs carry the .md extension? sample_submission.csv omits it;
-  # the competition description says "filename". Unresolved — leaderboard probe.
-  # false -> "01_windows_installation_login_guide"
-  # true  -> "01_windows_installation_login_guide.md"
+  # ══ RESOLVED BY LEADERBOARD PROBE — do not change without a new probe ══
+  #
+  # Grader model, consistent with all four probe deltas:
+  #   EXACT string match on each citation element, F1-style partial credit
+  #   across the set.
+  #
+  # D-004 RESOLVED (probe 2): no .md extension. Adding it cost 15.66 points,
+  # which is exactly the retrieval dimension (20 x doc_F1 0.783) — citation was
+  # already zero in that run because it used full_header.
   doc_extension: false
 
-  # ── KNOWN UNKNOWN #2 ────────────────────────────────────────────────────
-  # What form does cited_sections take? The header is
-  #   "## Section 2: Common Installation Errors"
-  # full_header -> "Section 2: Common Installation Errors"
-  # number_only -> "Section 2"
-  # title_only  -> "Common Installation Errors"
-  # sample_submission.csv shows "Section 1", but that file is dummy data.
-  # Unresolved — leaderboard probe. Default is the most informative variant.
-  section_format: full_header
+  # D-005 RESOLVED (probes 3 and 4): number_only. Switching from full_header
+  # gained +11.25 = 15 x citation_F1 0.750. title_only scored IDENTICALLY to
+  # full_header (68.02 both) — the signature of exact matching, since both are
+  # wrong strings and both score zero.
+  # sample_submission.csv was authoritative after all, not dummy data.
+  section_format: number_only
 
   separator: "|"
 
 retrieval:
-  # ── PROVISIONAL — NOT a Phase 1 conclusion ──────────────────────────────
+  # ── Phase 1 defaults. Still a plateau choice, but now leaderboard-validated
+  # as part of the 79.27 configuration. ──────────────────────────────────────
   # 217 of 312 retrieval configurations are within one noise band of the top
   # recall@10 score on n=50, and 36 tie at it exactly. Nothing here was chosen
   # because it "won"; these are defaults picked from the broadest plateau so
@@ -55,7 +57,8 @@ retrieval:
   citation_strategy: null
 
 rerank:
-  # ── PROVISIONAL — all 24 configurations were inside the +/-14.0 pp noise band ──
+  # ── All 24 configurations were inside the +/-14.0 pp noise band; chosen on
+  # tie-break. Now leaderboard-validated as part of the 79.27 configuration. ──
   # Chosen on tie-break, not on score: smallest model (~90 MB) and 5x faster than
   # the alternatives (19.1 pairs/s vs 3.9 bge-reranker-base, 2.9 mxbai) while
   # sitting top of both leaderboards. See docs/DECISIONS.md D-018..D-021.
@@ -69,14 +72,13 @@ rerank:
   # retriever is retained; this sets the default path only. See D-019.
   pool_size: null           # null = score every section
 
-  # ── STILL UNSET, now with evidence ──────────────────────────────────────
-  # Phase 1 left this open because bi-encoder scores were uncalibrated. Phase 2
-  # showed cross-encoder scores ARE discriminative and a score-gap rule STILL
-  # cannot beat fixed topk-1 (best adaptive: -0.0800). Cardinality is an intent
-  # decision, not a score decision — it belongs to the Phase 3 router. topk-1 is
-  # the interim default because it is least bad under the unresolved grader
-  # question (D-022, D-025).
-  citation_strategy: topk-1   # INTERIM — pending router
+  # D-025 RESOLVED (probe 5): the grader gives F1-style partial credit, not
+  # exact-set matching. Blanket topk-2 cost only 2.37 points (predicted -3.4
+  # under F1, -12.8 under exact) — so cardinality is worth a few points, not the
+  # ~31 that exact-set matching would have implied.
+  # topk-1 stays the default; the router raises cardinality per question where
+  # intent says two sources are genuinely needed (D-022).
+  citation_strategy: topk-1
 
 generation:
   # Extractive is the default and carries the probe submissions. It beat every

@@ -30,23 +30,28 @@ from proctoriq_rag.corpus.loader import load_corpus  # noqa: E402
 from proctoriq_rag.pipeline import Pipeline, PipelineConfig  # noqa: E402
 from proctoriq_rag.submission.writer import Prediction, write_submission  # noqa: E402
 
-#: The probe sequence. Each entry names what it changes FROM THE CURRENT BASELINE
-#: — the baseline is rebuilt after each format question is resolved, because
-#: citation is scored on (doc, section) pairs and a wrong document format makes
-#: every section probe read as "no effect". See docs/PROBES.md.
+#: Probes 1-5 are RESOLVED and kept only as a historical record — rerunning them
+#: is how the locked config was reached, not something to repeat. The format
+#: baseline now comes from config/default.yaml, which is locked.
+#:
+#: Probes 6a and 6b vary ONLY answer_text, with citations frozen at the locked
+#: config, mirroring how 2-5 varied only citations. See docs/PROBES.md.
+HISTORICAL_PROBES: list[tuple[str, dict]] = [
+    ("h2-doc-extension", {"doc_extension": True}),
+    ("h4-section-title", {"section_format": SectionFormat.TITLE_ONLY}),
+    ("h5-topk2", {"citation_strategy": "topk-2"}),
+]
+
 PROBES: list[tuple[str, dict]] = [
-    ("p1-baseline", {}),
-    ("p2-doc-extension", {"doc_extension": True}),
-    ("p3-section-number", {"section_format": SectionFormat.NUMBER_ONLY}),
-    ("p4-section-title", {"section_format": SectionFormat.TITLE_ONLY}),
-    ("p5-topk2", {"citation_strategy": "topk-2"}),
-    ("p6-topk3", {"citation_strategy": "topk-3"}),
+    ("p1-locked", {}),
 ]
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--probes", action="store_true", help="generate all probe variants")
+    parser.add_argument("--historical", action="store_true",
+                        help="also regenerate the resolved probes 2-5 (record only)")
     parser.add_argument("--mode", default="extractive", choices=["extractive", "generative"])
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "outputs" / "probes")
     args = parser.parse_args()
@@ -63,7 +68,9 @@ def main() -> int:
     base = Pipeline(corpus=corpus, config=PipelineConfig(generation_mode=args.mode))
     base.fit(qtexts)
 
-    variants = PROBES if args.probes else PROBES[:1]
+    variants = list(PROBES) if args.probes else PROBES[:1]
+    if args.historical:
+        variants += HISTORICAL_PROBES
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     fingerprints: dict[str, str] = {}
@@ -90,9 +97,11 @@ def main() -> int:
                 )
             )
 
+        # Defaults come from the LOCKED config, not from literals — probes 2-5
+        # resolved these and a hardcoded default here would silently re-break them.
         submission_config = SubmissionConfig(
-            doc_extension=changes.get("doc_extension", False),
-            section_format=changes.get("section_format", SectionFormat.FULL_HEADER),
+            doc_extension=changes.get("doc_extension", config.submission.doc_extension),
+            section_format=changes.get("section_format", config.submission.section_format),
         )
         path = args.out_dir / f"submission_{name}.csv"
         write_submission(

@@ -18,14 +18,53 @@ points would discard exactly the information the probes exist to collect.
 
 ## Log
 
-| # | Date | Config changed | Hypothesis | Predicted Δ | Observed public | Actual Δ | Conclusion |
-|---|---|---|---|---|---|---|---|
-| 1 | | baseline: no `.md`, `full_header`, `topk-1`, extractive | reference point | — | | — | |
-| 2 | | `DOC_EXTENSION = True` | D-004: does `cited_docs` take `.md`? | −27 if baseline right / +27 if wrong / ~0 if fuzzy | | | |
-| 3 | | `SECTION_FORMAT = "number_only"` | D-005a | −10 if `full_header` right | | | |
-| 4 | | `SECTION_FORMAT = "title_only"` | D-005b | −10 if `full_header` right | | | |
-| 5 | | `CITATION_STRATEGY = "topk-2"` | D-025: exact-match vs F1 grading | **−12.8** exact / **−3.4** F1 | | | |
-| 6 | | `CITATION_STRATEGY = "topk-3"` | D-025 amplified — **only if 5 inconclusive** | **−19.2** exact / **−6.9** F1 | | | |
+| # | Config changed | Hypothesis | Predicted Δ | Observed public | Actual Δ | Conclusion |
+|---|---|---|---|---|---|---|
+| 1 | baseline: no `.md`, `full_header`, `topk-1`, extractive | reference point | — | **68.02** | — | reference |
+| 2 | `DOC_EXTENSION = True` | D-004: does `cited_docs` take `.md`? | −27 / +27 / ~0 | **52.36** | **−15.66** | **no `.md`.** See reconciliation below |
+| 3 | `SECTION_FORMAT = "number_only"` | D-005a | −10 if `full_header` right | **79.27** | **+11.25** | **`number_only` wins.** `full_header` was wrong |
+| 4 | `SECTION_FORMAT = "title_only"` | D-005b | −10 if `full_header` right | **68.02** | **0.00** | tie to the cent -> **exact matching** |
+| 5 | `CITATION_STRATEGY = "topk-2"` (vs the 79.27 baseline) | D-025: exact-match vs F1 grading | **−12.8** exact / **−3.4** F1 | **76.90** | **−2.37** | **F1 partial credit.** topk-1 retained |
+| 6 | *not run* — probe 5 was decisive (−2.37 is outside the (−9.0, −6.0) inconclusive band) | — | — | — | — | pre-registered rule correctly said skip |
+
+### The grader model, consistent with all four deltas
+
+**Exact string match on each citation element, F1-style partial credit across the set.**
+
+The decisive evidence is probe 4. `title_only` scored **68.02 — identical to `full_header` to the
+cent**. Under fuzzy or semantic matching those two strings would score differently, because
+"Common Installation Errors" and "Section 2: Common Installation Errors" have different similarity
+to "Section 2". Under exact matching both are simply wrong and both score exactly zero. Only exact
+matching produces a tie to the cent.
+
+### Reconciling probe 2 — why −15.66 and not −27
+
+The −27 prediction assumed retrieval *and* citation would both collapse. But probe 2 ran with
+`full_header`, so **citation was already zero before `.md` was added**. Only retrieval could break:
+
+    predicted retrieval loss = 20 x doc_F1 = 20 x 0.847 = 16.9
+    observed                 = 15.66  ->  public doc_F1 = 0.783
+
+The prediction was right about the mechanism and slightly high on the magnitude, because public
+doc-F1 (0.783) is a little below our local estimate (0.847) on a ~20-question sample.
+
+### Score decomposition, derived from the deltas alone
+
+Probe 2 zeroes both retrieval and citation, so **its 52.36 is the answer half measured directly**.
+
+| dimension | F1 (public) | achieved | available | headroom |
+|---|---|---|---|---|
+| retrieval | 0.783 | 15.66 | 20 | 4.34 |
+| citation | 0.750 | 11.25 | 15 | 3.75 |
+| **citation half** | | **26.91** | **35** | **8.09** |
+| **answer half** (accuracy + groundedness + refusal) | | **52.36** | **65** | **12.64** |
+| **total** | | **79.27** | **100** | **20.73** |
+
+Reconstructs to 79.27 exactly, which is a strong check that the model is right.
+
+**Note:** public citation-F1 (0.750) is *higher* than our local estimate (0.667). Different question
+subsets, so weak — but it points the same way as the Phase 2 cross-encoder evidence that our key may
+be pessimistic on the contested entries.
 
 ---
 
