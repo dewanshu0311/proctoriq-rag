@@ -61,26 +61,50 @@ def select_source_citations(
 
 
 class SubsectionFocuser:
-    """Picks the most relevant ``###`` block inside a section, by lexical overlap.
+    """Picks the most relevant ``###`` block inside a section.
 
     Five sections in this corpus hold 13 ``###`` subsections between them, and
     they are the largest sections — doc 01 §2 is 1,317 characters covering three
     unrelated installation errors. Answering a question about "Session Start
     Error" with all three dilutes similarity against a golden answer about one.
 
-    Selection is lexical rather than model-based on purpose: it must be
-    deterministic and dependency-free so the extractive path stays byte-identical
-    across runs and inlines cleanly into the Kaggle notebook. The citation is
-    always the parent ``##`` regardless of which subsection is chosen.
+    Two scorers, same interface
+    ---------------------------
+    The default is lexical token overlap: deterministic, dependency-free, and it
+    keeps the extractive path runnable with no model at all.
+
+    It is also **measurably too weak**. Audited across the `###`-dense sections it
+    gave Q02 and Q03 the same passage — both received the Session Start Error
+    text though Q03 asks about Unspecified Error. Citation stays correct in that
+    case, so it costs nothing on the 35% citation half and everything on the
+    other 65%.
+
+    So when a cross-encoder is available, :meth:`fit` precomputes scores for every
+    (question, subsection) pair and selection uses those instead. It is the same
+    model already ranking sections, so this adds no new dependency and stays
+    deterministic. The citation is always the parent ``##`` either way.
     """
 
     def __init__(self, corpus: Corpus) -> None:
         self.corpus = corpus
         self._by_section: dict[tuple[str, str], list[tuple[str | None, str]]] = {}
-        for chunk in SubsectionChunker(include_header_in_text=False).chunk(corpus):
+
+        # Two parallel views of the same subsections, in the same order.
+        # `_chunks` (no header) is what gets returned as answer text.
+        # `_scoring_chunks` (header included) is what gets scored — the ### title
+        # IS the discriminating signal here. The error names "Element not found",
+        # "Session Start Error" and "Unspecified Error" appear ONLY in the
+        # headers; the bodies describe fixes without ever naming the error. Score
+        # the bodies alone and the three become nearly indistinguishable, which is
+        # exactly the collision this class exists to fix.
+        self._chunks = SubsectionChunker(include_header_in_text=False).chunk(corpus)
+        self._scoring_chunks = SubsectionChunker(include_header_in_text=True).chunk(corpus)
+
+        for chunk in self._chunks:
             self._by_section.setdefault(chunk.citation, []).append(
                 (chunk.subsection_title, chunk.text)
             )
+        self._scores: dict[str, dict[tuple[str | None, str], float]] = {}
 
     @staticmethod
     def _tokens(text: str) -> set[str]:
@@ -88,12 +112,43 @@ class SubsectionFocuser:
             c.lower() if c.isalnum() else " " for c in text
         ).split() if len(t) > 2}
 
+    # ── optional cross-encoder scoring ─────────────────────────────────────
+    def fit(self, questions: Sequence[str], reranker) -> "SubsectionFocuser":
+        """Precompute cross-encoder scores for every (question, subsection) pair.
+
+        ``reranker`` is any :class:`CrossEncoderReranker`-shaped object. Roughly
+        50 x 61 = 3,050 pairs, cached on disk like every other scoring pass.
+        """
+        from proctoriq_rag.retrieval.reranker import CrossEncoderReranker
+
+        scorer = CrossEncoderReranker(
+            reranker.model_name,
+            score_transform=reranker.score_transform,
+            text_variant="body",
+            cache=reranker.cache,
+            model=reranker.model,
+        )
+        scorer.fit(list(questions), self._scoring_chunks, self.corpus)
+        matrix = scorer.scores()
+
+        # Score with headers, key by the header-free text that will be returned.
+        for row, question in enumerate(questions):
+            self._scores[question] = {
+                (chunk.subsection_title, chunk.text): float(matrix[row][column])
+                for column, chunk in enumerate(self._chunks)
+            }
+        return self
+
     def focus(self, question: str, doc_id: str, section_title: str) -> str:
         """Return the best-matching subsection body, or the whole section."""
         parts = self._by_section.get((doc_id, section_title), [])
         if len(parts) <= 1:
             section = self.corpus.get_section(doc_id, section_title)
             return section.body if section else (parts[0][1] if parts else "")
+
+        scored = self._scores.get(question)
+        if scored is not None:
+            return max(parts, key=lambda part: scored.get(part, float("-inf")))[1]
 
         question_tokens = self._tokens(question)
         best_text, best_score = parts[0][1], -1.0
@@ -118,6 +173,12 @@ class ExtractiveAnswerer:
 
     def __post_init__(self) -> None:
         self._focuser = SubsectionFocuser(self.corpus) if self.focus_subsections else None
+
+    def fit_focuser(self, questions: Sequence[str], reranker) -> "ExtractiveAnswerer":
+        """Upgrade subsection selection from lexical overlap to the cross-encoder."""
+        if self._focuser is not None and reranker is not None:
+            self._focuser.fit(questions, reranker)
+        return self
 
     @property
     def name(self) -> str:
