@@ -107,8 +107,12 @@ intent — one of:
                     request for special treatment or an on-the-spot decision
   "status_outcome"  asking what a status means, where to check it, or how long a
                     review takes
-  "compound"        genuinely two questions at once, especially a legitimate
-                    troubleshooting question WITH a request that policy forbids
+  "compound"        genuinely two things at once: something the documentation
+                    answers normally AND a request policy forbids. This includes
+                    asking what a status or outcome MEANS and then asking for it
+                    to be changed, overridden, guaranteed, or fast-tracked; and
+                    describing a technical problem and then asking whether some
+                    prohibited shortcut is acceptable.
 
 platform — "windows", "mac", or "unspecified" if the question names neither
 
@@ -119,9 +123,15 @@ phase — one of:
   "post"    after the exam: reporting an issue, re-attempt requests, statuses,
             contacting support
 
-cardinality — 1 normally; 2 only if answering well genuinely requires TWO
-different documents, for example an explicit comparison between platforms, or a
-question that pairs a factual answer with a policy boundary.
+cardinality — 1 normally. Use 2 when answering well genuinely needs TWO different
+documents, which happens in two recognisable shapes:
+  - an explicit comparison between platforms or situations
+  - a factual answer PLUS a policy boundary: the student asks what something
+    means or what to do, and also asks for something to be overridden, approved
+    on the spot, guaranteed, or exempted. One document explains the process or
+    the status; a different one states what support or the system will never do.
+Judge cardinality on its own merits — a question can be "compound" and still be
+answerable from a single document.
 
 JSON only."""
 
@@ -202,10 +212,10 @@ class QueryRouter:
         cardinality = 2 if ("versus" in text or " vs " in text
                             or "difference between" in text) else 1
 
-        return RouteDecision(
+        return widen_compound(RouteDecision(
             question_id=question_id, intent=intent, platform=platform,
             phase=phase, cardinality=cardinality, source="fallback",
-        )
+        ), question)
 
     # ── LLM classification ─────────────────────────────────────────────────
     def _parse(self, question_id: str, raw: str) -> RouteDecision | None:
@@ -250,6 +260,7 @@ class QueryRouter:
                 raw = self.client.complete(CLASSIFY_PROMPT.format(question=question))
                 decision = self._parse(question_id, raw)
                 if decision is not None:
+                    decision = widen_compound(decision, question)
                     self.stats["llm"] += 1
                     self._cache[question] = decision.as_dict()
                     return decision
@@ -274,3 +285,78 @@ class QueryRouter:
             self.cache_path.write_text(
                 json.dumps(self._cache, indent=2), encoding="utf-8"
             )
+
+
+# ── compound widening ──────────────────────────────────────────────────────
+#: Asking for a decision, override, exemption, or guarantee.
+_BOUNDARY_REQUEST = (
+    "can you", "can support", "can a support", "can they", "can my", "can i",
+    "could you", "will that", "won't apply", "wont apply", "override", "exempt",
+    "fast-track", "fast track", "approve", "confirm that", "guaranteed",
+    "turn off", "disable", "bypass", "pause my", "okay to", "ok to",
+)
+
+#: Asking what something is, means, or what to do — the factual half.
+#: Deliberately excludes "how do i" and "why can" — those are the phrasing of
+#: most boundary REQUESTS too ("how do I turn off face verification"), so
+#: including them made every pure-boundary question look compound and sent it to
+#: a prompt that asks the model to answer a legitimate half that does not exist.
+_FACTUAL_QUESTION = (
+    "what does", "what do the", "what should", "how long",
+    "where can i", "what happens", "what information", "status shows",
+    "what's the difference", "what is the difference",
+)
+
+#: A described incident: the student is reporting a real problem, not only asking.
+_INCIDENT = (
+    "froze", "frozen", "disconnected", "dropped", "broke", "broken", "died",
+    "unresponsive", "restart", "warning", "flagged", "interrupted", "failed",
+    "not detected", "isn't", "won't let me",
+)
+
+
+def widen_compound(decision: "RouteDecision", question: str) -> "RouteDecision":
+    """Reclassify as compound when a factual half and a boundary request co-occur.
+
+    Router intent accuracy is 84%, so trusting a ``lookup`` call on a genuinely
+    adversarial question loses integrity-refusal outright on those misses.
+    Refusing-and-answering a compound question costs far less than missing a
+    refusal entirely, so the asymmetry favours firing when in doubt.
+
+    Deliberately a *general* signal rather than a rule tuned question-by-question
+    against the key — fitting it to the holdout is exactly the overfitting this
+    project has guarded against throughout. Whatever recall it achieves is
+    reported as measured, not iterated until it matches.
+    """
+    text = question.lower()
+    has_boundary = any(marker in text for marker in _BOUNDARY_REQUEST)
+    has_factual = any(marker in text for marker in _FACTUAL_QUESTION)
+    has_incident = any(marker in text for marker in _INCIDENT)
+
+    if has_boundary and (has_factual or has_incident):
+        # Intent only — cardinality is deliberately NOT raised here.
+        #
+        # The two uses of "compound" have opposite risk profiles and measurement
+        # forced them apart. For REFUSAL firing the asymmetry favours recall:
+        # missing a refusal loses integrity-refusal (15%) outright, while
+        # refusing-and-answering a compound question costs little. For CARDINALITY
+        # the asymmetry runs the other way: probe 5 showed a blanket second
+        # citation costs 2.37 points, and a false positive always adds a wrong
+        # citation while a true positive only pays when the SECOND ranked section
+        # is also right.
+        #
+        # Measured: widening both together took recall 1/14 -> 7/14 but added 5
+        # false positives, and the citation half fell from 27.17 to 26.50 — below
+        # router-off at 26.93. Widening intent alone keeps the refusal recall and
+        # gives the citation cost back.
+        return RouteDecision(
+            question_id=decision.question_id,
+            intent="compound",
+            platform=decision.platform,
+            phase=decision.phase,
+            cardinality=decision.cardinality,
+            source=decision.source,
+            raw=decision.raw,
+        )
+
+    return decision

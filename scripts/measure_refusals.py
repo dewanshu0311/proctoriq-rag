@@ -91,11 +91,15 @@ def main() -> int:
         texts = []
         for i, qid in enumerate(qids):
             decision = decisions[qid]
-            fire = decision.is_policy_boundary or qid in adversarial
-            if arm == "refusal" and fire:
-                texts.append(refuser.refuse(
-                    qtexts[i], citations[i], compound=decision.intent == "compound"
-                ))
+            # Fire on the ROUTER's classification only. The previous version also
+            # fired on `qid in adversarial`, which used the answer key to decide
+            # pipeline behaviour — a holdout leak — and overrode the router's
+            # lookup call on Q33, which is how the manufactured prohibition got in.
+            if arm == "refusal" and decision.is_policy_boundary:
+                variant = "compound" if decision.intent == "compound" else "pure_boundary"
+                texts.append(
+                    refuser.answer_with_variant(qtexts[i], citations[i], variant)
+                )
             else:
                 texts.append(extractive.answer(qtexts[i], citations[i]))
             if (i + 1) % 15 == 0:
