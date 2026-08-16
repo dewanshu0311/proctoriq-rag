@@ -103,13 +103,18 @@ routing:
   score_bias: off           # off | bias | filter
 
   # ── MEASURED NEGATIVE #2: cardinality routing ───────────────────────────
-  # Narrow (LLM-only) cardinality scored 26.88 vs 26.93 off — neutral, and its
-  # one apparent +0.23 gain was an artefact of router nondeterminism (it caught
-  # Q13 on one run, Q26 on another). Widening compound to raise recall took
-  # 1/14 -> 7/14 but added 5 false positives and dropped the citation half to
-  # 26.50, BELOW router-off: a false positive always adds a wrong citation,
-  # while a true positive only pays when the second-ranked section is also
-  # right. See D-035.
+  # Narrow (LLM-only) cardinality scored 26.88 vs 26.93 off — neutral. Widening
+  # compound to raise recall took 1/14 -> 7/14 but added 5 false positives and
+  # dropped the citation half to 26.50, BELOW router-off: a false positive
+  # always adds a wrong citation, while a true positive only pays when the
+  # second-ranked section is also right. See D-035.
+  #
+  # CORRECTION: an earlier version of this comment blamed the +0.23-vs--0.05
+  # difference on router nondeterminism. That was WRONG. The router is fully
+  # deterministic here — 5 runs at temperature 0 with the cache disabled gave
+  # 50/50 stability on every axis and identical refusal firing [19,19,19,19,19].
+  # The two figures came from two different PROMPT versions. Conclusion
+  # unchanged, stated reason retracted. See D-036.
   cardinality_routing: false
 
   # ── WHAT THE ROUTER IS ACTUALLY FOR ─────────────────────────────────────

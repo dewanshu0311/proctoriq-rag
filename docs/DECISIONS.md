@@ -1065,3 +1065,223 @@ where the two hypotheses are not separable given roughly 20 public questions.
 **Stating predictions in advance is the entire point.** A −7 observation is
 uninterpretable unless you already know whether the hypotheses predicted −3 or
 −13.
+
+---
+
+# Phase 4 — Router, refusals, and two measured negatives
+
+## D-033 — The probe sequence resolved every open format unknown
+
+**Date:** 2026-08-16 · **Phase:** 4 · **Status:** settled
+
+**Grader model:** exact string match on each citation element, F1-style partial
+credit across the set. Consistent with all four deltas.
+
+| probe | change | public | Δ | conclusion |
+|---|---|---|---|---|
+| 1 | baseline | 68.02 | — | reference |
+| 2 | `.md` added | 52.36 | −15.66 | **D-004 resolved: no extension** |
+| 3 | `number_only` | 79.27 | +11.25 | **D-005 resolved: number_only** |
+| 4 | `title_only` | 68.02 | **0.00** | tie to the cent → exact matching |
+| 5 | `topk-2` | 76.90 | −2.37 | **D-025 resolved: F1 partial credit** |
+
+Probe 4 is the decisive one. Under fuzzy matching, "Common Installation Errors"
+and "Section 2: Common Installation Errors" would score *differently* against
+"Section 2". Under exact matching both are wrong and both score exactly zero —
+which is the only way to tie to the cent.
+
+Full decomposition and the probe-2 reconciliation are in
+[SUBMISSION_LOG.md](SUBMISSION_LOG.md). Headline: citation half 26.91/35, answer
+half 52.36/65, **8.09 and 12.64 points of headroom respectively**.
+
+---
+
+## D-034 — Router score biasing: measured negative, shipped off
+
+**Date:** 2026-08-16 · **Phase:** 4 · **Status:** settled — falsifies half of D-023
+
+Boosting platform / phase / policy documents, on the real 20/15 weighting out of 35:
+
+| arm | doc F1 | cite F1 | /35 |
+|---|---|---|---|
+| router OFF | 0.8467 | 0.6667 | **26.93** |
+| bias, topk-1 | 0.8067 | 0.6267 | 25.53 (−1.40) |
+| filter, topk-1 | 0.8067 | 0.6267 | 25.53 (−1.40) |
+
+By kind, never netted:
+
+| kind | Δ doc | Δ cite | |
+|---|---|---|---|
+| adversarial | **+0.0000** | **+0.0000** | no gain on the class it was built for |
+| lookup | −0.0345 | −0.0345 | regression, 1.0000 → 0.9655 |
+| multi_doc | +0.0667 | +0.0667 | |
+
+**This falsifies the retrieval-side half of the Phase 2 hypothesis (D-023).** That
+hypothesis was that adversarial questions need intent classification *before*
+retrieval. Intent classification before retrieval moved adversarial document-F1
+by exactly zero. The policy-document boost changed no rankings at all.
+
+What it does **not** falsify is the generation-side half — see D-037.
+
+Kept as evidence rather than deleted, per the principle that a measured negative
+is worth more as a record than the code is as a feature.
+
+---
+
+## D-035 — Cardinality routing: neutral, shipped off
+
+**Date:** 2026-08-16 · **Phase:** 4 · **Status:** settled
+· **CORRECTED** — see D-036 for the retraction
+
+**Decision.** `cardinality_routing: false`. `topk-1` for every question.
+
+| arm | /35 |
+|---|---|
+| router OFF (topk-1) | **26.93** |
+| narrow cardinality (LLM only) | 26.88 |
+| widened cardinality | 26.50 |
+
+Narrow cardinality is **neutral** — 26.88 against 26.93, a difference far inside
+noise. Widening it to raise recall made things worse: two-source recall went
+1/14 → 7/14 but added 5 false positives, and the citation half fell *below*
+router-off.
+
+**Why widening loses despite better recall.** A false positive **always** adds a
+wrong citation. A true positive only pays when the *second-ranked* section is
+also correct — and document-F1 is 0.85, so frequently it is not. Probe 5 priced
+a blanket extra citation at 2.37 points; the asymmetry runs against recall here.
+
+**The asymmetry inverts between the two uses of `compound`.** For refusal firing,
+missing one loses integrity-refusal (15%) outright while over-firing costs
+little — recall is worth buying. For cardinality, over-firing costs on every
+false positive. So intent and cardinality are **decoupled**: intent widens,
+cardinality stays narrow.
+
+**Correction.** An earlier version of this entry, and of the `routing` block in
+`config/default.yaml`, attributed the difference between an apparent +0.23 and
+the later −0.05 to *router nondeterminism*. **That attribution was wrong.** The
+router is fully deterministic on this corpus (D-036). The two figures came from
+two different prompt versions. The conclusion — cardinality routing is neutral
+and ships off — is unchanged; the stated reason was false and has been replaced.
+
+---
+
+## D-036 — A measurement error: a prompt change misread as sampling variance
+
+**Date:** 2026-08-16 · **Phase:** 4 · **Status:** settled — process lesson
+
+**What happened.** Two router measurement runs disagreed about which two-source
+questions were identified — Q13 on one, Q26 on the other — and the citation half
+moved from +0.23 to −0.05. I attributed this to Groq nondeterminism at
+temperature 0 and reported it as such. That report propagated into the project
+owner's instructions and into `config/default.yaml` before it was caught.
+
+**What was actually true.** Between those two runs I had edited the classification
+prompt — removing `"how do i"` from the factual markers, because it is the
+phrasing of most boundary *requests* too. The runs differed because the *prompt*
+differed. Measuring across that change compared two systems, not two samples of
+one system.
+
+**The measurement that settled it.** Five runs, temperature 0, cache disabled,
+prompt held fixed:
+
+| axis | stable across 5 runs |
+|---|---|
+| intent | **50/50 = 100%** |
+| platform | **50/50 = 100%** |
+| phase | **50/50 = 100%** |
+| cardinality | **50/50 = 100%** |
+
+Refusal firing: `[19, 19, 19, 19, 19]` — always the same 19 questions, never the
+other 31, zero flips.
+
+**The lesson.** Hold the prompt fixed when measuring, or you are measuring two
+things at once. This is the same shape as the Phase 1 grid-size error, where
+comparing a max over 312 configurations against a max over 24 looked like a
+regression until the grids were equalised — and the same shape as the Phase 2
+leaderboard-identity comparison that reported a false "MATERIAL DISAGREEMENT"
+because 36 configurations were tied and pandas broke the tie arbitrarily.
+
+Three times now the error has been the same: **a comparison where more than one
+thing changed.** It is the failure this project's whole measurement discipline
+exists to catch, and it still got through twice before being caught.
+
+**Consequences.** Probe 6a is safe — it measures a fixed arm, and no
+deterministic fallback is needed on the refusal path. D-035's conclusion stands
+on its own merits. The false justification is retracted rather than quietly
+edited, because a decision log with a wrong reason is worse than one with no
+reason: it will be trusted later.
+
+---
+
+## D-037 — Refusals: the surviving half of the adversarial hypothesis
+
+**Date:** 2026-08-16 · **Phase:** 4 · **Status:** OPEN — probe 6a decides
+
+D-034 falsified the retrieval half. The generation half survives: we retrieve the
+right policy section and then **paste it verbatim instead of refusing**.
+
+Measured on the 14 adversarial questions, citations held fixed:
+
+| arm | grounded (all) | grounded (adv) | declines | addresses |
+|---|---|---|---|---|
+| extractive | 0.7715 | **0.6753** | 8/14 | 11/14 |
+| refusal, one mandating prompt | 0.7524 | 0.6194 | 14/14 | 12/14 |
+| **refusal, three conditional prompts** | 0.7548 | **0.6509** | 13/14 | **13/14** |
+
+Refusals decline where extraction does not, and ground slightly worse. Which side
+the grader rewards is not locally measurable — groundedness is similarity to the
+source excerpt, so extraction wins there *by construction*, while
+integrity-refusal is scored against a correct refusal, which we cannot measure at
+all. **Probe 6a is the only instrument that can settle it.**
+
+**The Q33 failure, and why the prompt was restructured.** The first version used a
+single prompt mandating a prohibition — "state plainly that this is not something
+that can be done." On Q33 it produced *"Restarting your laptop is not permitted
+when the assessment page freezes"*, which contradicts doc 05 §1, the section it
+was handed, which instructs pressing and holding the power button. It then ignored
+the alt-tab request entirely.
+
+Three compounding causes:
+1. The measurement fired refusals on `qid in adversarial` — using the answer key
+   to decide pipeline behaviour, a holdout leak, which overrode the router's
+   `lookup` call. Fixed, and now caught by `tests/test_no_key_leakage_scripts.py`.
+2. The prompt *mandated* a conclusion, so on a question whose primary content is
+   legitimate the model manufactured a prohibition.
+3. Cardinality 1 meant only doc 05 §1 was in context. The policy passage was
+   never available, so the model invented the prohibition it could not quote.
+
+**No prompt may mandate a conclusion the retrieved passage does not support.**
+Every variant now instructs that an INSTRUCTED action must never be called
+forbidden, and `pure_boundary` explicitly permits *not* refusing. Refusals receive
+every cited passage, not just the top one.
+
+Q33 now answers the legitimate half and declines the smuggled one. A regression
+test asserts no generated answer calls prohibited an action its cited passage
+instructs — the guard itself needed three fixes (sentence-scoping, splitting on
+original case, and narrowing to distinctive verbs after "checking your notes is
+not permitted" collided with "check whether the page resumes").
+
+---
+
+## D-038 — Alternate-key evidence, third look
+
+**Date:** 2026-08-16 · **Phase:** 4 · **Status:** EVIDENCE — key unchanged
+
+Under routing, worst-rank of each reading:
+
+| Q | primary | best alternate | verdict |
+|---|---|---|---|
+| Q14 | 15 | single-source-login → **1** | BETTER |
+| Q28 | 14 | policy-only → **2** | BETTER |
+| Q31 | 37 | prohibition-plus-boundary → 37 | same |
+| Q35 | 18 | warning-vs-termination-only → **12** | BETTER |
+
+Same three as Phase 2 — exactly the three low-confidence entries. Q31 (medium)
+still shows no preference.
+
+**This is not a third independent signal, and should not be counted as one.**
+Routing re-weights the *same* cross-encoder scores; it is the Phase 2 measurement
+viewed through a filter, not a new instrument. Consistent, but not independent.
+The genuinely independent signals remain two: the bi-encoder (Phase 1) and the
+cross-encoder (Phase 2).

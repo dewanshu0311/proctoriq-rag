@@ -52,6 +52,9 @@ def main() -> int:
     parser.add_argument("--probes", action="store_true", help="generate all probe variants")
     parser.add_argument("--historical", action="store_true",
                         help="also regenerate the resolved probes 2-5 (record only)")
+    parser.add_argument("--probe-6a", action="store_true",
+                        help="answer-half probe: refusals on router-classified "
+                             "boundary questions, citations frozen")
     parser.add_argument("--mode", default="extractive", choices=["extractive", "generative"])
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "outputs" / "probes")
     args = parser.parse_args()
@@ -67,6 +70,9 @@ def main() -> int:
     print("reranking (shared across all probes) ...")
     base = Pipeline(corpus=corpus, config=PipelineConfig(generation_mode=args.mode))
     base.fit(qtexts)
+
+    if args.probe_6a:
+        return _probe_6a(config, corpus, qids, qtexts, base, args.out_dir)
 
     variants = list(PROBES) if args.probes else PROBES[:1]
     if args.historical:
@@ -141,6 +147,78 @@ def main() -> int:
         return 1
 
     print(f"\n{len(frame)} submissions in {args.out_dir}")
+    return 0
+
+
+def _probe_6a(config, corpus, qids, qtexts, base, out_dir: Path) -> int:
+    """Answer-half probe: only answer_text varies, citations frozen.
+
+    Asserts the citation columns are byte-identical to the locked baseline before
+    writing. If they are not, the probe measures two things at once and must not
+    be submitted — the same guarantee the answer-hash check gave probes 2-5,
+    pointed the other way.
+    """
+    from proctoriq_rag.generation.groq_client import GroqChatClient, load_dotenv
+    from proctoriq_rag.generation.refusal import RefusalAnswerer
+    from proctoriq_rag.routing.router import QueryRouter
+
+    load_dotenv(REPO_ROOT / ".env")
+    client = GroqChatClient()
+    router = QueryRouter(
+        client=client, cache_path=REPO_ROOT / ".cache" / "router_decisions.json"
+    )
+    decisions = {d.question_id: d for d in router.classify_all(qids, qtexts)}
+
+    # NOTE: fit_focuser() is deliberately NOT called here.
+    #
+    # The cross-encoder subsection fix changes answer_text on exactly one
+    # question (Q03, which was receiving the Session Start Error passage instead
+    # of Unspecified Error). Applying it here would make probe 6a vary TWO things
+    # against the 79.27 submission — refusals on 19 questions AND a subsection
+    # correction on a 20th — and the delta would no longer be attributable.
+    #
+    # The fix is real and wanted; it ships in a later submission, isolated.
+    refuser = RefusalAnswerer(corpus=corpus, base=base.answerer, client=client)
+
+    citations = [base.citations_for(i) for i in range(len(qtexts))]
+    fired, predictions = [], []
+    for i, qid in enumerate(qids):
+        decision = decisions[qid]
+        if decision.is_policy_boundary:
+            variant = "compound" if decision.intent == "compound" else "pure_boundary"
+            text = refuser.answer_with_variant(qtexts[i], citations[i], variant)
+            fired.append(qid)
+        else:
+            text = base.answerer.answer(qtexts[i], citations[i])
+        predictions.append(Prediction(
+            question_id=qid, answer_text=text,
+            cited_docs=[d for d, _ in citations[i]],
+            cited_sections=[sec for _, sec in citations[i]],
+        ))
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "submission_p6a-refusals.csv"
+    write_submission(predictions, config.paths.test_csv, path, config.submission,
+                     sample_submission=config.paths.sample_submission)
+
+    print("\n  refusal fired on %d questions: %s" % (len(fired), ", ".join(fired)))
+
+    baseline = out_dir / "submission_p1-locked.csv"
+    if baseline.exists():
+        old, new = pd.read_csv(baseline), pd.read_csv(path)
+        same = (old["cited_docs"].equals(new["cited_docs"])
+                and old["cited_sections"].equals(new["cited_sections"]))
+        changed = int((old["answer_text"] != new["answer_text"]).sum())
+        print("\n" + "=" * 78)
+        print("CITATION-IDENTITY CHECK")
+        print("=" * 78)
+        print("  citation columns identical to locked baseline: %s" % same)
+        print("  answer_text rows changed: %d" % changed)
+        if not same:
+            print("\n  FAIL - citations moved. This probe would measure two things.")
+            return 1
+        print("\n  PASS - only answer_text varies. Any delta is the answer half.")
+    print("\nwrote %s" % path)
     return 0
 
 

@@ -26,6 +26,7 @@ points would discard exactly the information the probes exist to collect.
 | 4 | `SECTION_FORMAT = "title_only"` | D-005b | −10 if `full_header` right | **68.02** | **0.00** | tie to the cent -> **exact matching** |
 | 5 | `CITATION_STRATEGY = "topk-2"` (vs the 79.27 baseline) | D-025: exact-match vs F1 grading | **−12.8** exact / **−3.4** F1 | **76.90** | **−2.37** | **F1 partial credit.** topk-1 retained |
 | 6 | *not run* — probe 5 was decisive (−2.37 is outside the (−9.0, −6.0) inconclusive band) | — | — | — | — | pre-registered rule correctly said skip |
+| **6a** | refusal template on the 19 router-classified boundary questions; citations frozen, extractive elsewhere | D-037: is the adversarial gap a generation problem? | **+1 to +2** realistic, +4.2 ceiling | | | *decision rule pre-registered in PROBES.md: ≥+3 ship refusals; −1 to +3 inconclusive, local evidence breaks the tie toward refusals; <−1 ship extractive* |
 
 ### The grader model, consistent with all four deltas
 
