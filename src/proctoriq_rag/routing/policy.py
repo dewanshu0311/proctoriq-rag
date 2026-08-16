@@ -37,7 +37,10 @@ class RoutingWeights:
     platform_mismatch: float = 0.80
     phase_match: float = 1.10
     policy_doc: float = 1.30
-    mode: str = "bias"           # bias | filter | off
+    # Default is OFF. Measured: bias cost -1.40 on the citation half out of 35,
+    # gained exactly 0.0000 on adversarial, and regressed lookup 1.0000 -> 0.9655.
+    # The code stays as documented evidence; it does not ship enabled.
+    mode: str = "off"            # off | bias | filter
 
 
 def _doc_prefix(doc_id: str) -> str:

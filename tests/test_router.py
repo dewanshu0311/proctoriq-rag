@@ -165,7 +165,17 @@ def test_filter_does_remove_and_is_therefore_not_the_default():
         sections, RouteDecision("Qx", platform="windows"), RoutingWeights(mode="filter")
     )
     assert all(s.doc_id != "02_mac_guide" for s in routed)
-    assert RoutingWeights().mode == "bias"
+
+
+def test_score_biasing_is_off_by_default():
+    """Measured negative: bias cost -1.40 on the citation half and gained 0.0000
+    on adversarial while regressing lookup. The code stays as evidence; it does
+    not ship enabled."""
+    assert RoutingWeights().mode == "off"
+    sections = [sec("02_mac_guide", "S1", 0.90), sec("01_win_guide", "S2", 0.89)]
+    assert apply_routing(
+        sections, RouteDecision("Qx", platform="windows"), RoutingWeights()
+    ) == sections
 
 
 def test_policy_boundary_lifts_the_policy_documents():
@@ -211,9 +221,11 @@ def test_platform_routing_separates_the_install_guides(corpus):
     mac = sec("02_mac_installation_login_guide",
               "Section 2: Common Installation Errors", 0.91)
 
+    # Explicit bias mode — the capability still works, it simply is not shipped.
     for platform, expected in (("windows", "01_windows_installation_login_guide"),
                                ("mac", "02_mac_installation_login_guide")):
         routed = apply_routing(
-            [windows, mac], RouteDecision("Qx", platform=platform), RoutingWeights()
+            [windows, mac], RouteDecision("Qx", platform=platform),
+            RoutingWeights(mode="bias"),
         )
         assert routed[0].doc_id == expected
