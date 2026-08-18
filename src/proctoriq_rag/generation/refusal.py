@@ -43,7 +43,7 @@ precisely how Q33 came to invent a prohibition it could not quote.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Sequence
 
 from proctoriq_rag.corpus.loader import Corpus
@@ -159,6 +159,12 @@ class RefusalAnswerer:
     max_chars: int = 700
     answer_from: AnswerFrom = "top1"
 
+    #: Questions whose refusal was TRUNCATED rather than generated. A truncated
+    #: refusal falls back to extractive text and produces a valid-looking row that
+    #: is silently the wrong arm — the third occurrence of that shape in this
+    #: project. Callers must treat a non-empty list as fatal, not informational.
+    truncated: list[str] = field(default_factory=list)
+
     @property
     def name(self) -> str:
         return "refusal+extractive"
@@ -179,9 +185,16 @@ class RefusalAnswerer:
         return "\n\n".join(parts)
 
     def answer_with_variant(
-        self, question: str, citations: Sequence[tuple[str, str]], variant: str
+        self, question: str, citations: Sequence[tuple[str, str]], variant: str,
+        question_id: str = "",
     ) -> str:
-        """Generate under the named variant, falling back rather than emitting nothing."""
+        """Generate under the named variant, falling back rather than emitting nothing.
+
+        Records truncation separately from failure. An exhausted token budget on a
+        reasoning model returns ``finish_reason="length"`` with empty content, which
+        looks identical to an API error here but means something different: the
+        model was working and ran out of room. Callers raise on it.
+        """
         if self.client is None:
             return self.base.answer(question, citations)
 
@@ -191,6 +204,9 @@ class RefusalAnswerer:
             )
         except Exception:  # noqa: BLE001 - degrade, never crash a submission
             text = ""
+
+        if getattr(self.client, "last_finish_reason", "") == "length" and not text:
+            self.truncated.append(question_id or question[:40])
 
         text = " ".join((text or "").split()).strip()
         if not text:

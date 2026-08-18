@@ -121,7 +121,7 @@ class GroqChatClient:
 
     model: str = DEFAULT_MODEL
     temperature: float = 0.0
-    max_tokens: int = 1200
+    max_tokens: int = 2500
     api_keys: list[str] = field(default_factory=list)
     retry: RetryPolicy = field(default_factory=RetryPolicy)
     sleep = staticmethod(time.sleep)
@@ -130,6 +130,16 @@ class GroqChatClient:
     _index: int = field(default=0, init=False, repr=False)
     calls: int = field(default=0, init=False)
     rotations: int = field(default=0, init=False)
+
+    #: Set on every completion so callers can distinguish a TRUNCATED reply from
+    #: a failed one. Reasoning models spend completion tokens on an internal trace
+    #: before emitting content, so an exhausted budget returns finish_reason
+    #: "length" with EMPTY content — which is indistinguishable from an API
+    #: failure at the text layer, and silently degrades to the fallback answer.
+    last_finish_reason: str = field(default="", init=False)
+    last_completion_tokens: int = field(default=0, init=False)
+    truncations: int = field(default=0, init=False)
+    max_completion_tokens_seen: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         if not self.api_keys:
@@ -167,7 +177,17 @@ class GroqChatClient:
                     max_tokens=kwargs.get("max_tokens", self.max_tokens),
                 )
                 self.calls += 1
-                return (completion.choices[0].message.content or "").strip()
+                choice = completion.choices[0]
+                self.last_finish_reason = choice.finish_reason or ""
+                usage = getattr(completion, "usage", None)
+                self.last_completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+                self.max_completion_tokens_seen = max(
+                    self.max_completion_tokens_seen, self.last_completion_tokens
+                )
+                text = (choice.message.content or "").strip()
+                if self.last_finish_reason == "length" and not text:
+                    self.truncations += 1
+                return text
             except Exception as error:  # noqa: BLE001 - SDK raises many shapes
                 last_error = error
                 if not _is_retryable(error):

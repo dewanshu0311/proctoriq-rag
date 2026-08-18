@@ -98,7 +98,9 @@ def main() -> int:
             if arm == "refusal" and decision.is_policy_boundary:
                 variant = "compound" if decision.intent == "compound" else "pure_boundary"
                 texts.append(
-                    refuser.answer_with_variant(qtexts[i], citations[i], variant)
+                    refuser.answer_with_variant(
+                        qtexts[i], citations[i], variant, question_id=qid
+                    )
                 )
             else:
                 texts.append(extractive.answer(qtexts[i], citations[i]))
@@ -123,6 +125,8 @@ def main() -> int:
             "mean_chars_adv": float(np.mean([len(t) for t in adv_texts])),
             "padding": sum(count_padding(t) for t in adv_texts),
             "n_adversarial": len(adv_texts),
+            "truncated": len(getattr(refuser, "truncated", [])),
+            "max_completion_tokens": getattr(client, "max_completion_tokens_seen", 0),
         })
 
     frame = pd.DataFrame(rows)
@@ -133,6 +137,11 @@ def main() -> int:
     )
 
     _report(frame, qids, qtexts, answers, adversarial)
+    print()
+    print(f"  truncated refusals : {len(refuser.truncated)} "
+          f"{refuser.truncated if refuser.truncated else ''}")
+    print(f"  max completion tokens observed : {client.max_completion_tokens_seen} "
+          f"(budget {client.max_tokens})")
     return 0
 
 

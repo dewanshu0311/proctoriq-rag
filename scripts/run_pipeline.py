@@ -186,7 +186,9 @@ def _probe_6a(config, corpus, qids, qtexts, base, out_dir: Path) -> int:
         decision = decisions[qid]
         if decision.is_policy_boundary:
             variant = "compound" if decision.intent == "compound" else "pure_boundary"
-            text = refuser.answer_with_variant(qtexts[i], citations[i], variant)
+            text = refuser.answer_with_variant(
+                qtexts[i], citations[i], variant, question_id=qid
+            )
             fired.append(qid)
         else:
             text = base.answerer.answer(qtexts[i], citations[i])
@@ -195,6 +197,20 @@ def _probe_6a(config, corpus, qids, qtexts, base, out_dir: Path) -> int:
             cited_docs=[d for d, _ in citations[i]],
             cited_sections=[sec for _, sec in citations[i]],
         ))
+
+    # ── GUARD: a truncated refusal is a silently wrong arm ────────────────
+    # finish_reason="length" with empty content falls back to extractive and
+    # writes a valid-looking row that is NOT the refusal arm. Third occurrence of
+    # that shape in this project, so it joins the key and router guards rather
+    # than being a metric someone has to notice.
+    if refuser.truncated:
+        raise RuntimeError(
+            f"{len(refuser.truncated)} refusal call(s) TRUNCATED "
+            f"({', '.join(refuser.truncated)}) — the reasoning trace exhausted "
+            f"max_tokens and returned empty content, so those rows silently fell "
+            f"back to extractive text. Refusing to write a submission that is not "
+            f"the arm it claims to be. Raise max_tokens and re-run."
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "submission_p6a-refusals.csv"
