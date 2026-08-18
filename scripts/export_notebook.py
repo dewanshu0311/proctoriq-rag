@@ -211,7 +211,7 @@ CARDINALITY_ROUTING = False      # let intent set citation count (measured neutr
 # --- models ---
 RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 TEXT_VARIANT = "body"            # what the cross-encoder scores: "body" | "titled"
-GROQ_MODEL   = "llama-3.1-8b-instant"
+GROQ_MODEL   = "openai/gpt-oss-120b"   # llama-3.1-8b-instant was removed by Groq (D-041)
 
 # --- paths (overridable so the notebook can be executed and tested off-Kaggle) ---
 import os
@@ -447,7 +447,7 @@ if GENERATION_MODE == "generative":
                             model=self.model,
                             messages=[{"role": "user", "content": prompt}],
                             temperature=0.0,
-                            max_tokens=400,
+                            max_tokens=1200,
                         )
                         return (done.choices[0].message.content or "").strip()
                     except Exception as error:
@@ -488,7 +488,7 @@ if api_key and (ROUTER_ENABLED or REFUSAL_ENABLED):
                     done = self.client.chat.completions.create(
                         model=self.model,
                         messages=[{"role": "user", "content": prompt}],
-                        temperature=0.0, max_tokens=300,
+                        temperature=0.0, max_tokens=1200,
                     )
                     return (done.choices[0].message.content or "").strip()
                 except Exception as error:
@@ -497,6 +497,28 @@ if api_key and (ROUTER_ENABLED or REFUSAL_ENABLED):
             raise RuntimeError(f"Groq failed after {self.max_attempts} attempts: {last}")
 
     groq_client = RouterClient(api_key)
+
+    # ── PREFLIGHT: confirm the model exists before processing 50 questions ──
+    # llama-3.1-8b-instant was removed by Groq mid-competition. Every call 404'd,
+    # the router silently fell back on all 50, and only a post-hoc guard stopped a
+    # wrong arm being written. Failing at question 0 instead of after a full run
+    # costs one call and turns a 6-minute wrong-arm run into an instant error.
+    try:
+        probe = groq_client.complete("Reply with exactly: ok")
+        print(f"model preflight OK: {GROQ_MODEL} -> {probe[:40]!r}")
+    except Exception as exc:
+        available = ""
+        try:
+            from groq import Groq as _G
+            available = ", ".join(sorted(m.id for m in _G(api_key=api_key).models.list().data))
+        except Exception:
+            available = "(could not list models)"
+        raise RuntimeError(
+            f"Groq model {GROQ_MODEL!r} is not usable: {exc}. "
+            f"Available models: {available}. "
+            "Set GROQ_MODEL in the configuration cell to one of these, or set "
+            "ROUTER_ENABLED/REFUSAL_ENABLED to False to run the extractive arm."
+        ) from exc
 
 router = QueryRouter(client=groq_client, cache_path=None, use_llm=ROUTER_ENABLED)
 decisions = {d.question_id: d

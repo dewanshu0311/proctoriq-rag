@@ -87,7 +87,7 @@ routing:
   # Classification accuracy vs the key:
   #   intent 84%  platform 87.5%  phase 93.5%  cardinality 74%
   enabled: true
-  model: llama-3.1-8b-instant
+  model: openai/gpt-oss-120b
   temperature: 0.0
 
   # ── MEASURED NEGATIVE #1: score biasing ─────────────────────────────────
@@ -141,7 +141,7 @@ generation:
   # three templates; answer-first-explained was designed for adversarial questions
   # and came last on them (D-026).
   template: structured-steps
-  groq_model: llama-3.1-8b-instant
+  groq_model: openai/gpt-oss-120b
   temperature: 0.0
   rotate_keys: false        # single key by default (D-031)
 

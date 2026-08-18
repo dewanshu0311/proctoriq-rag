@@ -19,7 +19,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-DEFAULT_MODEL = "llama-3.1-8b-instant"
+# llama-3.1-8b-instant was REMOVED from Groq mid-competition (404
+# model_not_found), after it had already produced the probe 6a arm. See D-041.
+#
+# gpt-oss models are reasoning models: they spend completion tokens on an
+# internal reasoning trace before emitting content. At max_tokens=300 the trace
+# consumed the whole budget and `content` came back EMPTY — which the router
+# would have read as an unparseable reply and silently fallen back on. Hence the
+# larger default.
+DEFAULT_MODEL = "openai/gpt-oss-120b"
 MAX_ROTATION_KEYS = 16
 
 
@@ -113,7 +121,7 @@ class GroqChatClient:
 
     model: str = DEFAULT_MODEL
     temperature: float = 0.0
-    max_tokens: int = 400
+    max_tokens: int = 1200
     api_keys: list[str] = field(default_factory=list)
     retry: RetryPolicy = field(default_factory=RetryPolicy)
     sleep = staticmethod(time.sleep)
