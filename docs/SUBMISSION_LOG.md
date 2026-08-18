@@ -26,7 +26,37 @@ points would discard exactly the information the probes exist to collect.
 | 4 | `SECTION_FORMAT = "title_only"` | D-005b | −10 if `full_header` right | **68.02** | **0.00** | tie to the cent -> **exact matching** |
 | 5 | `CITATION_STRATEGY = "topk-2"` (vs the 79.27 baseline) | D-025: exact-match vs F1 grading | **−12.8** exact / **−3.4** F1 | **76.90** | **−2.37** | **F1 partial credit.** topk-1 retained |
 | 6 | *not run* — probe 5 was decisive (−2.37 is outside the (−9.0, −6.0) inconclusive band) | — | — | — | — | pre-registered rule correctly said skip |
-| **6a** | refusal template on the 19 router-classified boundary questions; citations frozen, extractive elsewhere | D-037: is the adversarial gap a generation problem? | **+1 to +2** realistic, +4.2 ceiling | | | *decision rule pre-registered in PROBES.md: ≥+3 ship refusals; −1 to +3 inconclusive, local evidence breaks the tie toward refusals; <−1 ship extractive* |
+| **6a** | refusal template on the 19 router-classified boundary questions; citations frozen, extractive elsewhere | D-037: is the adversarial gap a generation problem? | **+1 to +2** realistic, +4.2 ceiling | **79.83** | **+0.56** | **INCONCLUSIVE** — lands in the pre-registered (−1, +3) band. Refusals ship on the named tiebreaker, not on this number |
+
+### Probe 6a — read exactly as the rule said
+
+Observed **+0.56**, inside the pre-registered inconclusive band. Per the rule written
+before the number was seen, the tiebreaker is local mechanism, and refusals ship as a
+**judgement call, not a measurement**.
+
+**Why the number cannot decide it.** The public split is ~20 questions, of which
+~5.6 are adversarial (14/50 × 20). One question is worth roughly **2.7 points** on
+the integrity-refusal dimension. A +0.56 delta is a fifth of one question — far
+inside noise, and consistent with anything from "refusals do nothing" to "refusals
+help by 2".
+
+**What the decision actually rests on:**
+- **Mechanism.** Extractive pastes policy prose that never declines: 8/14 of the
+  adversarial answers contain refusal language. The refusal template reaches
+  13–14/14 and addresses the student in 13/14. Integrity-refusal is scored against
+  a *correct refusal*; text that recites a policy without declining cannot score
+  well on it however similar it looks.
+- **The private split.** 30 questions, so ~8–9 adversarial rather than ~5.6. A real
+  per-question effect has more room to show there than it did here.
+- **Not the number.**
+
+**Calibration note.** Predicted +1 to +2 realistic, +4.2 ceiling. Observed +0.56 —
+**right sign, below the realistic band**. Recorded as a slight over-prediction, not
+a hit. Three of five probe predictions have now come in on the low side of their
+central estimate (probe 2: −16.9 predicted, −15.66 observed; probe 5: −3.4, −2.37;
+probe 6a: +1.5, +0.56), which is a consistent bias worth carrying into probe 7.
+
+**Standing after 6a: 79.83, 2nd place. Leader 84.98.**
 
 ### The grader model, consistent with all four deltas
 

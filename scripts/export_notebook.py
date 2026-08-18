@@ -397,17 +397,34 @@ score. The prompts suppress it explicitly.
 """))
     cells.append(code('''
 # A Groq key is needed for generative mode AND for the router/refusal path.
-api_key = ""
-if GENERATION_MODE == "generative" or ROUTER_ENABLED or REFUSAL_ENABLED:
-    api_key = os.environ.get("GROQ_API_KEY", "")
+#
+# Resolution order: GROQ_API_KEY first, then GROQ_API_KEY_1..9. A missing
+# unsuffixed secret once caused a run to silently produce the WRONG ARM.
+NEEDS_KEY = GENERATION_MODE == "generative" or ROUTER_ENABLED or REFUSAL_ENABLED
+KEY_NAMES = ["GROQ_API_KEY"] + [f"GROQ_API_KEY_{i}" for i in range(1, 10)]
+
+api_key, key_source = "", "none"
+if NEEDS_KEY:
+    for name in KEY_NAMES:
+        value = os.environ.get(name, "")
+        if value:
+            api_key, key_source = value, f"env:{name}"
+            break
     if not api_key:
         try:
             from kaggle_secrets import UserSecretsClient
-            api_key = UserSecretsClient().get_secret("GROQ_API_KEY")
+            secrets = UserSecretsClient()
+            for name in KEY_NAMES:
+                try:
+                    value = secrets.get_secret(name)
+                except Exception:
+                    continue
+                if value:
+                    api_key, key_source = value, f"kaggle_secrets:{name}"
+                    break
         except Exception as exc:
-            print(f"No Groq key available ({exc}).")
-            print("Router will use its deterministic keyword fallback; refusals "
-                  "degrade to extractive. The run still completes.")
+            print(f"Kaggle Secrets unavailable ({exc}).")
+    print(f"Groq key resolved from: {key_source}")
 
 answerer = None
 if GENERATION_MODE == "generative":
@@ -487,11 +504,42 @@ decisions = {d.question_id: d
 print(f"router: {router.stats}")
 
 refuser = None
+fires = []
 if REFUSAL_ENABLED:
     refuser = RefusalAnswerer(documents, base=answerer, client=groq_client,
                               max_chars=MAX_ANSWER_CHARS, answer_from=ANSWER_FROM)
     fires = [q for q in question_ids if decisions[q].is_policy_boundary]
     print(f"refusal fires on {len(fires)} questions: {', '.join(fires)}")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  FAIL LOUDLY — never write a wrong arm that looks correct
+# ══════════════════════════════════════════════════════════════════════════
+# A run with ROUTER_ENABLED/REFUSAL_ENABLED but no resolvable key silently
+# degrades to the extractive baseline and writes a valid-looking 50-row
+# submission. That is the most dangerous failure in this project: submitting it
+# would have scored ~79.27 and read as "refusals do nothing".
+#
+# Silent degradation is acceptable ONLY when those flags are False.
+if NEEDS_KEY and not api_key:
+    raise RuntimeError(
+        "ROUTER_ENABLED/REFUSAL_ENABLED/generative is set but no Groq key resolved "
+        f"(tried {', '.join(KEY_NAMES)} in env and Kaggle Secrets). "
+        "Refusing to write a submission that would silently be the extractive "
+        "baseline. Add the secret, or set the flags to False deliberately."
+    )
+if ROUTER_ENABLED and router.stats["llm"] == 0:
+    raise RuntimeError(
+        f"ROUTER_ENABLED is True but the LLM classified nothing "
+        f"({router.stats}). Every decision came from the keyword fallback, so "
+        "this is NOT the routed arm. Refusing to write."
+    )
+if REFUSAL_ENABLED and not fires:
+    raise RuntimeError(
+        "REFUSAL_ENABLED is True but the router classified zero questions as "
+        "policy_boundary or compound. Refusing to write what would be an "
+        "extractive run wearing a refusal label."
+    )
 '''))
 
     cells.append(md("""
@@ -535,6 +583,35 @@ expected_header = SUBMISSION_COLUMNS
 if SAMPLE_PATH and os.path.exists(SAMPLE_PATH):
     with open(SAMPLE_PATH, "r", encoding="utf-8", newline="") as handle:
         expected_header = tuple(h.strip() for h in next(csv.reader(handle)))
+
+# ── run summary: the Logs tab must answer "did my intended arm run?" ──────
+refusals_written = sum(1 for r in rows if r["question_id"] in fires)
+print()
+print("=" * 70)
+print("RUN SUMMARY")
+print("=" * 70)
+print(f"  groq key resolved     : {key_source}")
+print(f"  router enabled        : {ROUTER_ENABLED}   classifications: {router.stats}")
+print(f"  refusal enabled       : {REFUSAL_ENABLED}  fired on {len(fires)} questions")
+print(f"  refusal rows written  : {refusals_written}")
+print(f"  score bias            : {SCORE_BIAS}")
+print(f"  cardinality routing   : {CARDINALITY_ROUTING}")
+print(f"  doc extension         : {DOC_EXTENSION}")
+print(f"  section format        : {SECTION_FORMAT}")
+print(f"  citation strategy     : {CITATION_STRATEGY}")
+print(f"  generation mode       : {GENERATION_MODE}   answerer: {answerer.name}")
+print(f"  mean citations        : "
+      f"{sum(len(r['cited_docs'].split('|')) for r in rows) / len(rows):.2f}")
+print("=" * 70)
+
+if REFUSAL_ENABLED:
+    ARM = "probe 6a — refusals on router-classified boundary questions"
+elif GENERATION_MODE == "generative":
+    ARM = "generative"
+else:
+    ARM = "locked extractive baseline (v1.0-locked-79.27)"
+print(f"  ARM: {ARM}")
+print()
 
 validate_rows(rows, question_ids, expected_header)
 

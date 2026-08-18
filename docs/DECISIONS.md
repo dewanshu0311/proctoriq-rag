@@ -1285,3 +1285,78 @@ Routing re-weights the *same* cross-encoder scores; it is the Phase 2 measuremen
 viewed through a filter, not a new instrument. Consistent, but not independent.
 The genuinely independent signals remain two: the bi-encoder (Phase 1) and the
 cross-encoder (Phase 2).
+
+
+---
+
+## D-039 — Refusals ship on mechanism, not on the probe number
+
+**Date:** 2026-08-18 · **Phase:** 4 · **Status:** settled — a judgement call, labelled as one
+
+**Probe 6a: 79.83, Δ +0.56.** Inside the pre-registered inconclusive band (−1, +3).
+
+The rule was written before the number was seen, and it is being followed rather
+than reinterpreted: in the middle band, local evidence breaks the tie, and it
+favours refusals.
+
+**The decision rests on:**
+
+1. **Mechanism.** Extractive answers on adversarial questions paste policy prose
+   that does not decline — 8/14 contain refusal language. The refusal template
+   reaches 13–14/14 and addresses the student in 13/14. Integrity-refusal (15%) is
+   scored against a *correct refusal*; reciting a policy without declining cannot
+   score well on that dimension no matter how similar the text looks.
+2. **The private split is bigger.** 30 questions means ~8–9 adversarial rather than
+   the ~5.6 in the public 20. A genuine per-question effect has more room there.
+3. **Explicitly NOT the +0.56.** One adversarial question is worth ~2.7 points on
+   that dimension, so +0.56 is a fifth of one question. It is consistent with no
+   effect and with a +2 effect alike.
+
+**Calibration.** Predicted +1 to +2 realistic, +4.2 ceiling; observed +0.56 —
+right sign, below the realistic band. A slight over-prediction, and the third
+probe in a row to land low of its central estimate (probe 2 −16.9/−15.66, probe 5
+−3.4/−2.37, probe 6a +1.5/+0.56). Carry that bias into probe 7.
+
+**Standing: 79.83, 2nd. Leader 84.98.** Defending a strong position rather than
+chasing, which weights variance reduction over upside in the final selection.
+
+---
+
+## D-040 — The notebook failed silently and produced a wrong arm
+
+**Date:** 2026-08-18 · **Phase:** 4 · **Status:** settled — the most dangerous bug in the project
+
+**What happened.** A probe-6a notebook run executed with no resolvable Groq key.
+The router never fired, the refusal path no-op'd, and it wrote a **valid-looking
+50-row `submission.csv` that was actually the extractive baseline**. Row count,
+headers, citations, non-empty answers — every structural check passed. It was
+caught only by reading the output before submitting: all 50 answers were verbatim
+corpus text and Q33 had no alt-tab refusal.
+
+Had it been submitted it would have scored ~79.27 and been recorded as **"refusals
+do nothing"** — a false negative on the single largest remaining lever, indexed
+against a probe whose whole purpose was to measure that lever.
+
+**Why it is worse than a crash.** Every other failure in this project announced
+itself. This one produced a plausible artefact with a wrong label, which is exactly
+the class of error the measurement discipline exists to prevent and the one that
+survives review longest.
+
+**Three fixes.**
+
+1. **Fail loudly.** When `ROUTER_ENABLED` or `REFUSAL_ENABLED` is set, the notebook
+   verifies the key resolved, that the router actually classified via the LLM
+   (`router.stats["llm"] > 0`), and that refusals fired on at least one question —
+   and raises before writing anything if not. Silent degradation to the keyless
+   fallback is acceptable **only** when those flags are False.
+2. **Run summary to stdout.** Key source, router stats, refusals fired, every
+   format flag, and a named ARM line. The Logs tab now answers "did the arm I
+   intended actually run?" without downloading the CSV.
+3. **Key resolution order.** `GROQ_API_KEY` first, then `GROQ_API_KEY_1..9`, in
+   both the environment and Kaggle Secrets. Single key remains the default — 100
+   calls per run is nowhere near the rate limit — this only stops a naming mismatch
+   from being mistaken for "no key available".
+
+**Verified:** with the 6a flags set and no key, the notebook raises
+`RuntimeError: ...no Groq key resolved... Refusing to write a submission that would
+silently be the extractive baseline` and **writes no file**.

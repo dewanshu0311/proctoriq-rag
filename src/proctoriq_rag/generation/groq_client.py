@@ -65,6 +65,19 @@ def discover_keys(rotate: bool | None = None) -> list[str]:
     primary = os.environ.get("GROQ_API_KEY", "").strip()
     keys = [primary] if primary else []
 
+    # Fall back to the numbered secrets when the unsuffixed one is absent.
+    # This is not rotation — it is resolution. A missing GROQ_API_KEY once caused
+    # a notebook run to silently produce the WRONG ARM: the router never fired,
+    # refusals no-op'd, and it wrote a valid-looking 50-row submission that was
+    # actually the extractive baseline. Single key stays the default; this only
+    # stops a naming mismatch from being mistaken for "no key available".
+    if not keys:
+        for index in range(1, MAX_ROTATION_KEYS + 1):
+            value = os.environ.get(f"GROQ_API_KEY_{index}", "").strip()
+            if value:
+                keys.append(value)
+                break
+
     if rotate:
         for index in range(1, MAX_ROTATION_KEYS + 1):
             value = os.environ.get(f"GROQ_API_KEY_{index}", "").strip()
