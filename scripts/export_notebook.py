@@ -197,16 +197,39 @@ REFUSAL_ENABLED     = False      # reasoned refusals on policy-boundary question
 SCORE_BIAS          = "off"      # "off" | "bias" | "filter"   (measured negative)
 CARDINALITY_ROUTING = False      # let intent set citation count (measured neutral)
 
+# --- subsection selection ---
+# Cross-encoder subsection selection instead of lexical overlap. Fixes one
+# question whose answer came from the wrong error passage: it asked about
+# "Unspecified Error" and received the "Session Start Error" text. The citation
+# was correct either way, so this costs nothing on the 35% citation half and
+# affects only the other 65%. Off by default so the locked baseline stays
+# reproducible; probe 7 turns it on.
+SUBSECTION_FIX      = False
+
 # ══════════════════════════════════════════════════════════════════════════
-#  PROBE 6a — the answer-half probe
-#  Set BOTH of these True, leave everything else exactly as above:
+#  WHICH ARM AM I RUNNING?
+#
+#  Set EXPECTED_ARM to the arm you intend. The pipeline derives the arm from
+#  the flags actually in effect and RAISES before writing if they disagree.
+#  A printed description is not a check — four wrong-arm submissions in four
+#  days went out under correct-looking summaries.
+#
+#    "extractive-locked"         all flags off  -> reproduces v1.0-locked-79.27
+#    "extractive-subsection"     SUBSECTION_FIX only
+#    "refusals-only"             ROUTER + REFUSAL
+#    "refusals-plus-subsection"  ROUTER + REFUSAL + SUBSECTION_FIX   <- PROBE 7
+#    "generative"                GENERATION_MODE = "generative"
+#
+#  PROBE 7 — subsection fix on top of refusals. Set exactly:
 #      ROUTER_ENABLED  = True
 #      REFUSAL_ENABLED = True
-#  That reproduces: refusal template on the 19 router-classified boundary
-#  questions, extractive elsewhere, citations byte-identical to the 79.27 run.
-#  Needs GROQ_API_KEY in Kaggle Secrets; without it the router falls back to a
-#  deterministic keyword classifier and refusals degrade to extractive.
+#      SUBSECTION_FIX  = True
+#      EXPECTED_ARM    = "refusals-plus-subsection"
+#  Refusal fires on 17 questions under gpt-oss-120b (the earlier count of 19 was
+#  llama-3.1-8b, which Groq has since removed). Requires GROQ_API_KEY — or any of
+#  GROQ_API_KEY_1..9 — in Kaggle Secrets, and Internet: On.
 # ══════════════════════════════════════════════════════════════════════════
+EXPECTED_ARM = "extractive-locked"
 
 # --- models ---
 RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -466,6 +489,13 @@ if answerer is None:
         documents, max_chars=MAX_ANSWER_CHARS, answer_from=ANSWER_FROM
     )
 
+# The subsection fix is a flag, not a default, so probe 7 can isolate it.
+if SUBSECTION_FIX and hasattr(answerer, "fit_focuser"):
+    answerer.fit_focuser(question_texts, reranker)
+    print("subsection fix: ON (cross-encoder subsection selection)")
+else:
+    print("subsection fix: off (lexical overlap)")
+
 print(f"answerer: {answerer.name}")
 
 # ── router: classify before answering ─────────────────────────────────────
@@ -583,7 +613,7 @@ for index, (qid, question) in enumerate(zip(question_ids, question_texts)):
 
     if refuser is not None and decision.is_policy_boundary:
         variant = "compound" if decision.intent == "compound" else "pure_boundary"
-        answer = refuser.answer_with_variant(question, citations, variant)
+        answer = refuser.answer_with_variant(question, citations, variant, question_id=qid)
     else:
         answer = answerer.answer(question, citations)
     docs = [format_doc(d, DOC_EXTENSION) for d, _ in citations]
@@ -626,14 +656,39 @@ print(f"  mean citations        : "
       f"{sum(len(r['cited_docs'].split('|')) for r in rows) / len(rows):.2f}")
 print("=" * 70)
 
-if REFUSAL_ENABLED:
-    ARM = "probe 6a — refusals on router-classified boundary questions"
-elif GENERATION_MODE == "generative":
+# ── derive the arm from the flags IN EFFECT, then assert it ────────────────
+if GENERATION_MODE == "generative":
     ARM = "generative"
+elif ROUTER_ENABLED and REFUSAL_ENABLED:
+    ARM = "refusals-plus-subsection" if SUBSECTION_FIX else "refusals-only"
+elif SUBSECTION_FIX:
+    ARM = "extractive-subsection"
 else:
-    ARM = "locked extractive baseline (v1.0-locked-79.27)"
-print(f"  ARM: {ARM}")
+    ARM = "extractive-locked"
+
+print(f"  DERIVED ARM : {ARM}")
+print(f"  EXPECTED ARM: {EXPECTED_ARM}")
 print()
+
+if ARM != EXPECTED_ARM:
+    raise RuntimeError(
+        f"ARM MISMATCH — you asked for {EXPECTED_ARM!r} but the flags produce "
+        f"{ARM!r}. Nothing has been written. Either set EXPECTED_ARM to {ARM!r}, "
+        f"or fix the flags: ROUTER_ENABLED={ROUTER_ENABLED}, "
+        f"REFUSAL_ENABLED={REFUSAL_ENABLED}, SUBSECTION_FIX={SUBSECTION_FIX}, "
+        f"GENERATION_MODE={GENERATION_MODE!r}."
+    )
+
+# A truncated refusal falls back to extractive text and writes a valid-looking
+# row that is NOT the refusal arm. Hard stop, same as the key and router guards.
+if refuser is not None and getattr(refuser, "truncated", []):
+    raise RuntimeError(
+        f"{len(refuser.truncated)} refusal call(s) TRUNCATED "
+        f"({', '.join(refuser.truncated)}): the reasoning trace exhausted "
+        f"max_tokens and returned empty content, so those rows silently fell back "
+        f"to extractive text. Refusing to write an arm that is not what it claims. "
+        f"Raise max_tokens in RouterClient and re-run."
+    )
 
 validate_rows(rows, question_ids, expected_header)
 
