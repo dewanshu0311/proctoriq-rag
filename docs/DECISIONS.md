@@ -1360,3 +1360,157 @@ survives review longest.
 **Verified:** with the 6a flags set and no key, the notebook raises
 `RuntimeError: ...no Groq key resolved... Refusing to write a submission that would
 silently be the extractive baseline` and **writes no file**.
+
+---
+
+## D-041 — Groq removed the model mid-competition, during use
+
+**Date:** 2026-08-18 · **Phase:** 4 · **Status:** settled — realised third-party risk
+
+`llama-3.1-8b-instant` returned **404 model_not_found**. It had already produced
+the probe 6a arm and scored 79.83; it stopped existing days later, with no notice
+and no deprecation window we saw.
+
+**A guard caught it that was not designed for this.** Every one of the 50 router
+calls returned 404, the router fell back on all 50, and the
+`router.stats["llm"] == 0` check refused to write. Without it this would have been
+the second silent wrong-arm submission in two days.
+
+**Repointed to `openai/gpt-oss-120b`**, which is no slower than 20b (0.64s vs
+0.77s) and better on every router axis: intent 84→90%, phase 93.5→100%,
+cardinality 74→80% with 4/14 two-source caught versus 1/14, still zero false
+positives.
+
+**A trap inside the swap.** `gpt-oss` are *reasoning* models: they spend completion
+tokens on an internal trace before emitting content. At `max_tokens=300` the trace
+consumed the whole budget and content came back **empty** — which the router reads
+as an unparseable reply and silently falls back on. Raised to 2500 (D-042).
+
+**A model preflight now runs before the 50 questions**: one call, raising
+immediately with the available-model list if the configured model is unusable.
+Failing at question 0 rather than after a full run.
+
+**This is the strongest single argument for the low-variance final candidate.** Not
+a hypothetical dependency risk — a realised one, mid-competition, on the exact
+component the higher-value arm depends on.
+
+---
+
+## D-042 — Truncation on reasoning models: the fourth wrong-arm mechanism
+
+**Date:** 2026-08-18 · **Phase:** 4 · **Status:** settled
+
+A refusal whose reasoning trace exhausts `max_tokens` returns
+`finish_reason="length"` with **empty content**, falls back to extractive text, and
+writes a valid-looking row that is **not the refusal arm**.
+
+Instrumented on the real pipeline path: the `compound` variant runs the longest
+traces (485–1200 tokens vs 299–688 for `pure_boundary`), because it must answer a
+factual half and decline a boundary half. Q44 hit the cap exactly. Q33 succeeded at
+1165 tokens with **35 of headroom**, which is why it failed one run and passed the
+next while a standalone repro always worked.
+
+The earlier "mechanism degraded to 10/14" reading was **measuring truncation, not
+refusal ability**. Retracted.
+
+Budget raised to 2500 and **verified across three runs**: max completion tokens
+1426 / 1382 / 1202, zero truncations — 43% headroom at worst.
+
+Corrected measurement:
+
+| arm | declines | grounded (adv) |
+|---|---|---|
+| extractive | 8/14 | 0.6753 |
+| refusal, run 1 | **13/14** | 0.6727 |
+| refusal, run 2 | **13/14** | 0.6491 |
+| refusal, run 3 | 11/14 | 0.6633 |
+
+The groundedness gap narrowed to **−0.003**, essentially parity. Declining is not
+stably ≥13 — run 3 gave 11/14.
+
+**Any truncated refusal now raises before writing**, joining the key, router and
+arm guards. Four distinct wrong-arm mechanisms have been caught in four days; this
+one became a hard stop rather than a metric someone has to notice.
+
+---
+
+## D-043 — HyDE and RAG Fusion: implemented, measured, negative
+
+**Date:** 2026-08-19 · **Phase:** 4 · **Status:** settled — the prediction held
+
+Both mandated. Both implemented properly. Both measured against the hybrid first
+stage they would replace, all 50 questions:
+
+| arm | r@1 | r@3 | r@5 | r@10 | doc F1 | cite F1 |
+|---|---|---|---|---|---|---|
+| hybrid (Phase 1 first stage) | 0.5000 | 0.7031 | **0.8438** | **0.9375** | 0.7333 | 0.5867 |
+| **HyDE** | 0.3281 | 0.5000 | 0.6406 | 0.8594 | 0.6467 | 0.3867 |
+| **RAG Fusion** | 0.5312 | 0.6719 | 0.7344 | 0.9062 | 0.7667 | 0.6200 |
+| cross-encoder (SHIPPED) | **0.5625** | **0.7656** | 0.7969 | 0.8906 | **0.8467** | **0.6667** |
+
+**HyDE is substantially worse**: recall@10 −0.078, citation F1 −0.200. The
+hypothetical answer drags retrieval toward generic policy prose and away from the
+specific section that answers the question.
+
+**Its one predicted strength failed on its own terms.** HyDE was expected to help
+most on `policy_boundary` questions, where question and answer vocabulary diverge
+furthest. On that subset recall@10 is **identical** to hybrid (0.8519) and
+recall@1 is **much worse** — 0.2593 against 0.4074. The single place it had a
+mechanism to help, it hurt.
+
+**RAG Fusion is the more interesting negative.** It *beats* the hybrid first stage
+on the metrics that matter — doc F1 0.7667 vs 0.7333, cite F1 0.6200 vs 0.5867 —
+while losing 3 points of recall@10. So it is a better *first stage* than plain
+hybrid. But it stays well below the cross-encoder already shipped (0.8467 /
+0.6667) and costs 4 LLM calls per question to get there.
+
+**The prediction was made before measuring and was correct**: on a 4,000-word
+corpus with recall@10 already at 93.75%, neither technique has room to work. Both
+are retained in the codebase as mandated components, reachable by the router, and
+**neither is on the default path**.
+
+A documented "implemented, measured, did not help here — here are the numbers" is
+a stronger result than a contrived routing rule, and it is honest about a
+component the rules require.
+
+---
+
+## D-044 — Probe 7, and a calibration pattern worth acting on
+
+**Date:** 2026-08-19 · **Phase:** 4 · **Status:** settled
+
+Probe 7 (subsection fix, isolated): **80.15, Δ +0.32** against a raw prediction of
++1.5 and a shrunk band of +0.6 to +0.9. Right sign, **below even the shrunk band**.
+
+**Four consecutive low-side landings, and the ratio is falling:**
+
+| probe | predicted | observed | ratio |
+|---|---|---|---|
+| 2 | −16.9 | −15.66 | **0.93** |
+| 5 | −3.4 | −2.37 | **0.70** |
+| 6a | +1.5 | +0.56 | **0.37** |
+| 7 | +1.5 | +0.32 | **0.21** |
+
+This is not a flat bias. **Large structural predictions land close; small ones land
+at a fifth of estimate.** Mechanism-based reasoning is well calibrated when an
+effect moves a whole dimension and badly optimistic when it is confined to a
+handful of questions — which makes sense: a mechanism argument establishes
+direction, not magnitude, and magnitude is what shrinks when only one or two of
+~20 public questions are touched.
+
+**Revised shrinkage rule:** ×0.90 above 10 points, ×0.70 for 3–10, **×0.30 below
+3**. Probe 7 would then have predicted +0.45 against +0.32 observed — still high,
+but a defensible band rather than double.
+
+**Also recorded: refusal firing is NOT stable.** Kaggle fired on **18** questions;
+the local run fired on **17**, differing on Q28. The 5-run `[19,19,19,19,19]`
+stability test was run against **llama-3.1-8b-instant, before the swap**. I carried
+its "100% stable on every axis" conclusion across a model change without
+re-testing — the same error shape as D-036, where a prompt change was misread as
+sampling variance.
+
+Consequences: the refusal arm is **not bit-reproducible**; two runs of identical
+configuration can differ by a question. `EXPECTED_ARM` still holds, but
+"refusals-plus-subsection" names a *family* of runs rather than one artefact. That
+is a strike against the LLM arms in final selection, independent of their measured
+value.

@@ -58,6 +58,68 @@ probe 6a: +1.5, +0.56), which is a consistent bias worth carrying into probe 7.
 
 **Standing after 6a: 79.83, 2nd place. Leader 84.98.**
 
+---
+
+### Probe 7 — subsection fix, isolated
+
+| # | Config changed | Predicted | Observed | Δ | Conclusion |
+|---|---|---|---|---|---|
+| 7 | `SUBSECTION_FIX = True` on top of refusals | raw +1.5, **shrunk +0.6 to +0.9** | **80.15** | **+0.32** | positive, but **below even the shrunk band** |
+
+Right sign, right direction, too small. The subsection fix changes one question's
+answer text (Q03, which was receiving the Session Start Error passage while asking
+about Unspecified Error), so a sub-point move is structurally plausible — one
+question out of ~20 public, affecting only the answer half.
+
+**Calibration: fourth consecutive low-side landing, and the first to miss the
+shrunk band.**
+
+| probe | predicted | observed | observed / predicted |
+|---|---|---|---|
+| 2 | −16.9 | −15.66 | **0.93** |
+| 5 | −3.4 | −2.37 | **0.70** |
+| 6a | +1.5 | +0.56 | **0.37** |
+| 7 | +1.5 (raw) | +0.32 | **0.21** |
+
+The ratio is not constant — **it falls as the predicted effect gets smaller**. Large
+structural predictions land close (0.93); small ones land at a fifth of estimate.
+That is a different pattern from a flat shrinkage factor, and it means my
+mechanism-based reasoning is well calibrated for effects that move whole
+dimensions and badly optimistic for effects confined to a handful of questions.
+
+**Revised shrinkage rule for any future prediction:**
+
+| raw predicted magnitude | multiply by |
+|---|---|
+| > 10 points | 0.90 |
+| 3 – 10 points | 0.70 |
+| < 3 points | **0.30** |
+
+Under this rule probe 7's raw +1.5 would have predicted **+0.45**, against the
+observed +0.32 — still high, but inside a defensible band rather than double.
+
+---
+
+### Refusal firing is NOT stable across runs
+
+Kaggle's probe-7 run fired refusals on **18** questions. My local run fired on
+**17**, and Q28 was the difference.
+
+**I over-claimed stability, and the error was mine.** The 5-run stability test that
+returned `[19, 19, 19, 19, 19]` was run against **llama-3.1-8b-instant**, before
+Groq removed it. After swapping to `gpt-oss-120b` I measured the firing set
+**once**, got 17, and carried the earlier "100% stable on every axis" conclusion
+across a model change without re-testing it — the same class of error as D-036,
+where a prompt change was misread as sampling variance.
+
+Consequences:
+- The refusal arm is **not bit-reproducible**. Two runs of identical
+  configuration can differ by at least one question's classification.
+- `EXPECTED_ARM` still holds — the derived arm is correct in both cases — but
+  "refusals-plus-subsection" names a *family* of runs rather than one artefact.
+- This is a strike against the LLM arms in the final selection, independent of
+  their measured value.
+
 ### The grader model, consistent with all four deltas
 
 **Exact string match on each citation element, F1-style partial credit across the set.**
