@@ -1514,3 +1514,69 @@ configuration can differ by a question. `EXPECTED_ARM` still holds, but
 "refusals-plus-subsection" names a *family* of runs rather than one artefact. That
 is a strike against the LLM arms in final selection, independent of their measured
 value.
+
+
+---
+
+## D-045 — The RAG Triad independently corroborates the refusal decision
+
+**Date:** 2026-08-19 · **Phase:** 4 · **Status:** settled — mandated component, and it earned its place
+
+Mandated by the rules, and the only evaluation in this project that **does not
+consult the answer key**. Every other measurement scores against a hand-built
+holdout and inherits its opinions, including on the four contested entries. The
+triad judges the pipeline on its own terms.
+
+All 50 questions, both selected arms:
+
+| arm | context relevancy | faithfulness | answer relevancy | mean |
+|---|---|---|---|---|
+| slot 2 — extractive (79.27) | 0.836 | **0.994** | 0.648 | 0.826 |
+| slot 1 — refusals + subsection (80.15) | 0.836 | 0.922 | **0.752** | **0.837** |
+
+**The adversarial subset is the comparison that matters**, and it is decisive:
+
+| metric | extractive | refusals | delta |
+|---|---|---|---|
+| context relevancy | 0.636 | 0.643 | +0.007 |
+| faithfulness | 0.979 | 0.843 | **−0.136** |
+| **answer relevancy** | **0.493** | **0.871** | **+0.379** |
+
+**This is the mechanism argument, measured by an instrument that has never seen the
+answer key.** Pasted policy text is almost perfectly *faithful* — it is verbatim
+source, so of course it is — and scores 0.493 on whether it actually **answers the
+student**. The refusal template nearly doubles that to 0.871.
+
+That is exactly what integrity-refusal (15%) is scored on: a *correct refusal*, not
+a correct quotation. The leaderboard could not resolve this — probe 6a returned
++0.56, inside its pre-registered inconclusive band — and the triad resolves it
+cleanly.
+
+**The faithfulness cost is real and expected.** Generated text is less literally
+grounded than pasted text; −0.136 on adversarial is the price of responding rather
+than reciting. Context relevancy is unchanged (+0.007), confirming retrieval was
+not touched — which is by design, since the refusal path varies `answer_text` only.
+
+**Caveat, same class as D-007.** This is an LLM judge. Scores are ordinal, not
+calibrated: valid for comparing arms and for locating the worst questions, not as
+an absolute quality measure. Its agreement with the mechanism argument is
+meaningful *because it is a different instrument*, not because 0.871 is a
+trustworthy absolute.
+
+---
+
+## D-046 — Weighted citation half on the real scale
+
+**Date:** 2026-08-19 · **Phase:** 4 · **Status:** settled
+
+`ScoreReport.citation_half()` now reports `20 x doc_F1 + 15 x cite_F1` out of 35,
+alongside the flat means.
+
+Once the grader model was resolved by probe — exact string match per element, F1
+partial credit across the set — our set-F1 figures became *directly comparable* to
+the real metric after weighting. That is not true of the answer half, which remains
+locally unmeasurable (D-007), so the report weights only the half it can honestly
+weight and says so.
+
+Public reference for calibration, derived from the probe deltas: retrieval
+15.66/20, citation 11.25/15, **26.91/35 with 8.09 headroom**.

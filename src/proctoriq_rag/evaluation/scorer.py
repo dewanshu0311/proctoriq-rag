@@ -125,6 +125,28 @@ class ScoreReport:
         """Questions where the document set or the citation pairs are wrong."""
         return [q for q in self.per_question if not q.is_perfect]
 
+    def citation_half(self) -> dict[str, float]:
+        """The citation half on the REAL scale the grader uses: 20/15 out of 35.
+
+        The grader model was resolved by probe: exact string match on each citation
+        element, F1-style partial credit across the set. So our set-F1 numbers are
+        directly comparable once weighted — unlike the answer half, which stays
+        locally unmeasurable (D-007).
+
+        Public reference, derived from the probe deltas: retrieval 15.66/20,
+        citation 11.25/15, total 26.91/35. Local figures differ because the public
+        split is ~20 of the 50 questions.
+        """
+        retrieval = self.dimension_means.get("retrieval") or 0.0
+        citation = self.dimension_means.get("citation") or 0.0
+        return {
+            "retrieval_points": 20.0 * retrieval,
+            "citation_points": 15.0 * citation,
+            "citation_half": 20.0 * retrieval + 15.0 * citation,
+            "available": 35.0,
+            "headroom": 35.0 - (20.0 * retrieval + 15.0 * citation),
+        }
+
     def breakdown(self, attribute: str = "kind") -> dict[str, dict[str, float]]:
         """Group the exact dimensions by ``kind`` or ``confidence``.
 
@@ -229,6 +251,27 @@ class ScoreReport:
         lines.append(
             f"  composite (renormalized): {self.composite_renormalized * 100:.2f} / 100  "
             "<- over measured dimensions only"
+        )
+
+        half = self.citation_half()
+        lines.append("")
+        lines.append(rule)
+        lines.append("CITATION HALF ON THE REAL SCALE (grader model resolved by probe)")
+        lines.append(rule)
+        lines.append(
+            f"  retrieval  20 x {self.dimension_means.get('retrieval') or 0:.4f} = "
+            f"{half['retrieval_points']:5.2f} / 20"
+        )
+        lines.append(
+            f"  citation   15 x {self.dimension_means.get('citation') or 0:.4f} = "
+            f"{half['citation_points']:5.2f} / 15"
+        )
+        lines.append(
+            f"  TOTAL                        {half['citation_half']:5.2f} / 35   "
+            f"(headroom {half['headroom']:.2f})"
+        )
+        lines.append(
+            "  public reference: 26.91 / 35 — retrieval 15.66, citation 11.25"
         )
 
         if self.notes:
