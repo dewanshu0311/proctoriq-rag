@@ -1608,3 +1608,112 @@ weight and says so.
 
 Public reference for calibration, derived from the probe deltas: retrieval
 15.66/20, citation 11.25/15, **26.91/35 with 8.09 headroom**.
+
+---
+
+## D-047 — Generation is worth ~+5; which generative arm is worth <1.4
+
+**Date:** 2026-08-22 · **Phase:** 5 · **Status:** settled
+
+Eleven answer configurations, citations frozen at the locked config, scored on
+three instruments with deliberately different biases.
+
+| arm | answer acc | grounded | integrity | est. total | chars |
+|---|---|---|---|---|---|
+| F generative structured + refusals | 0.851 | 0.731 | 0.811 | **78.65** | 418 |
+| H1400 gen + extract | 0.821 | 0.762 | 0.798 | 78.49 | 866 |
+| D generative answer-first top2 | 0.851 | 0.708 | **0.836** | 78.44 | 440 |
+| H2-1400 gen + extract(top2) | 0.806 | 0.768 | 0.796 | 78.22 | 1050 |
+| P1400 extract + gen | 0.793 | **0.780** | 0.753 | 77.56 | 866 |
+| B extractive top2 | 0.717 | 0.783 | 0.617 | 73.69 | 609 |
+| A extractive top1 (shipped) | 0.720 | 0.772 | 0.608 | 73.33 | 425 |
+
+Retrieval (0.847) and citation (0.667) are identical across every row by
+construction, so the whole spread lives in the 65% answer half.
+
+**The result is a plateau, not a peak.** The top four arms span 0.43 points and
+sit on three different templates, two different lengths, and both hybrid orders.
+The decision that matters is extractive → generative (+4.4 to +5.3, and every one
+of the six generative arms clears +4.4). Which generative arm is chosen after
+that is inside the noise of three uncalibrated proxies.
+
+**Selected: D, plain generative `answer-first-explained` at `answer_from="top2"`.**
+Not the argmax — 0.21 below F. Chosen on the Phase 1 rule (report plateaus, select
+for robustness) because it has the fewest moving parts of the top group: no
+router pass, no refusal module, no concatenation, 50 Groq calls total. It also
+posts the highest integrity-refusal score of any arm, which is the dimension the
+alternatives add machinery to address.
+
+**Alternatives rejected:** F, the argmax, needs the router and the refusal module
+and scores *lower* on integrity refusal (0.811 vs 0.836) than the plain template
+does — the second time this phase that dedicated refusal machinery has lost to
+generation that simply follows `STYLE_CONTRACT`. H1400 requires running both
+answer paths for +0.05.
+
+---
+
+## D-048 — Answer length was never swept. Now it has been, and it is flat.
+
+**Date:** 2026-08-22 · **Phase:** 5 · **Status:** settled
+
+`max_answer_chars = 700` was chosen arbitrarily in Phase 3 and carried through
+every probe. Swept from 231 to 1050 characters via the hybrid arms:
+
+| mean chars | answer accuracy | groundedness | est. total |
+|---|---|---|---|
+| 440 | 0.851 | 0.708 | 78.44 |
+| 777 | 0.789 | 0.778 | 77.26 |
+| 866 | 0.821 | 0.762 | 78.49 |
+| 1050 | 0.806 | 0.768 | 78.22 |
+
+Length trades one dimension against another at almost exactly par: doubling the
+answer buys **+0.054 groundedness** and costs **−0.029 answer accuracy** and
+**−0.038 integrity refusal**. Weighted, that nets +0.05. The lever is real and it
+is flat.
+
+**Why this needed a third instrument.** Both instruments in use before this
+sweep are blind to verbosity in the same direction — the groundedness proxy
+rewards echoing more source text, and an LLM relevancy judge does not deduct for
+saying it at length. Measured on those two alone, the 866-character hybrid looked
+like a clear winner (combined 0.830 vs 0.809). Adding a reference-answer
+instrument that *does* penalise length collapsed the gap to 0.05.
+
+Two proxies pointing the same way is not corroboration when they share a bias.
+
+---
+
+## D-049 — The citation half's remaining 8.07 points are not reachable by cardinality
+
+**Date:** 2026-08-22 · **Phase:** 5 · **Status:** settled
+
+The citation half sits at 26.93/35. The loss is not spread — it is 14 questions:
+
+| kind | n | doc F1 | cite F1 |
+|---|---|---|---|
+| lookup | 29 | **1.000** | 0.862 |
+| adversarial | 14 | 0.643 | 0.452 |
+| multi_doc | 5 | 0.667 | 0.400 |
+
+Those are exactly the 14 questions where the key expects two sections and
+`topk-1` cites one. F1 partial credit (probe 5) makes each worth 0.667 instead of
+1.000, so the arithmetic invites adaptive cardinality: cite two when the question
+looks multi-part.
+
+**Two independent reasons it does not work.**
+
+*The sections are not there to cite.* Of the 14, only **4** have both key sections
+inside the reranker's top-2, 5 inside top-3, and 9 inside top-10. Citing top-2
+everywhere would convert four questions to exact and push several from 0.667 to
+0.500. That is probe 5's −2.37, and this is its mechanism.
+
+*The confidence signal is inverted.* An adaptive rule needs "rank-1 stands clearly
+alone → cite one". The rank1→rank2 score gap is **larger** on multi-section
+questions (median 0.1315) than on single-section ones (0.0283), and 10 of the 14
+multi questions exceed the single-section median. A gap threshold fires on
+precisely the wrong set.
+
+This closes out D-032's neutral cardinality-routing result with a mechanism: the
+router was not weak, the signal it was asked to act on points the wrong way.
+Retrieval on lookup is at ceiling (doc F1 1.000); the remaining headroom is
+concentrated in adversarial questions whose second section the cross-encoder does
+not surface at all.
