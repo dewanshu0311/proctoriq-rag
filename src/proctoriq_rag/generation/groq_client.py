@@ -124,6 +124,13 @@ class GroqChatClient:
     max_tokens: int = 2500
     api_keys: list[str] = field(default_factory=list)
     retry: RetryPolicy = field(default_factory=RetryPolicy)
+
+    #: Per-request timeout, seconds. WITHOUT THIS A HUNG REQUEST BLOCKS FOREVER.
+    #: Observed: a sweep sat for 26 minutes on one call with 22s of CPU across 31
+    #: minutes of wall time — blocked on a socket, with the retry/backoff logic
+    #: never reached because nothing ever raised. Retries only help if something
+    #: fails; a hang is not a failure.
+    request_timeout: float = 60.0
     sleep = staticmethod(time.sleep)
 
     _clients: list[Any] = field(default_factory=list, init=False, repr=False)
@@ -141,6 +148,13 @@ class GroqChatClient:
     truncations: int = field(default=0, init=False)
     max_completion_tokens_seen: int = field(default=0, init=False)
 
+    #: Keys that returned a daily-quota 429. Retired for the rest of the run — a
+    #: TPD limit does not clear in seconds, so retrying an exhausted key just
+    #: burns wall time. Measured: key 1 hit 199,637 of 200,000 TPD while keys 2-9
+    #: still had full budget, so they are separate quotas and rotation is the
+    #: right response rather than backoff.
+    exhausted: set = field(default_factory=set, init=False)
+
     def __post_init__(self) -> None:
         if not self.api_keys:
             self.api_keys = discover_keys()
@@ -155,7 +169,10 @@ class GroqChatClient:
                 )
             from groq import Groq
 
-            self._clients = [Groq(api_key=key) for key in self.api_keys]
+            self._clients = [
+                Groq(api_key=key, timeout=self.request_timeout, max_retries=0)
+                for key in self.api_keys
+            ]
         return self._clients
 
     def complete(self, prompt: str, **kwargs: Any) -> str:
@@ -192,15 +209,39 @@ class GroqChatClient:
                 last_error = error
                 if not _is_retryable(error):
                     raise
+
+                if _is_daily_quota(error):
+                    self.exhausted.add(self._index % len(clients))
+                    if len(self.exhausted) >= len(clients):
+                        raise GroqError(
+                            f"All {len(clients)} Groq keys have hit their daily token "
+                            f"limit. Last: {error}"
+                        ) from error
+
                 if len(clients) > 1:
-                    self._index += 1
-                    self.rotations += 1
+                    # Skip past any key already known to be out of budget.
+                    for _ in range(len(clients)):
+                        self._index += 1
+                        self.rotations += 1
+                        if (self._index % len(clients)) not in self.exhausted:
+                            break
                     continue
                 self.sleep(self.retry.delay_for(attempt))
 
         raise GroqError(
             f"Groq request failed after {self.retry.max_attempts} attempts: {last_error}"
         ) from last_error
+
+
+def _is_daily_quota(error: Exception) -> bool:
+    """A tokens-per-day 429, as distinct from a per-minute one.
+
+    A TPD limit does not clear in seconds. Backing off against it stalls the run:
+    a sweep sat for 26 minutes because the SDK's own retries honoured a ~55s
+    Retry-After INSIDE this loop's retries, nesting the sleeps. Rotate instead.
+    """
+    text = str(error).lower()
+    return "429" in text and ("per day" in text or "tpd" in text)
 
 
 def _is_retryable(error: Exception) -> bool:

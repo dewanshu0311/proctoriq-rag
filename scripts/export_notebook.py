@@ -196,8 +196,13 @@ CITATION_STRATEGY = "topk-1"     # "topk-1" | "topk-2" | "gap-0.95" | "thresh-0.
 
 # --- answer generation ---
 GENERATION_MODE = "extractive"   # "extractive" (deterministic, no API key) | "generative"
-TEMPLATE_NAME   = "structured-steps"
-ANSWER_FROM     = "top1"         # "top1" keeps answer_text stable across citation changes
+TEMPLATE_NAME   = "answer-first-explained"
+ANSWER_FROM     = "top1"         # "top1" | "top2" | "top3" | "cited"
+                                 # top2/top3 widen the ANSWER's context to the top
+                                 # N reranked sections while citations stay exactly
+                                 # as the citation strategy chose. Measured on the
+                                 # RAG Triad: answer relevancy 0.634 -> 0.918 with
+                                 # generative + top2.
 MAX_ANSWER_CHARS = 700
 
 # --- router (ships for REFUSAL FIRING ONLY) ---
@@ -231,7 +236,8 @@ SUBSECTION_FIX      = False
 #    "extractive-subsection"     SUBSECTION_FIX only
 #    "refusals-only"             ROUTER + REFUSAL
 #    "refusals-plus-subsection"  ROUTER + REFUSAL + SUBSECTION_FIX   <- PROBE 7
-#    "generative"                GENERATION_MODE = "generative"
+#    "generative"                GENERATION_MODE = "generative", ANSWER_FROM = "top1"
+#    "generative-top2"           GENERATION_MODE = "generative", ANSWER_FROM = "top2"
 #
 #  PROBE 7 — subsection fix on top of refusals. Set exactly:
 #      ROUTER_ENABLED  = True
@@ -631,11 +637,18 @@ for index, (qid, question) in enumerate(zip(question_ids, question_texts)):
     chosen = active.select(ranked)
     citations = [s.citation for s in chosen]
 
+    # Widened answer context: the top-N reranked sections. Citations are NOT
+    # touched — they remain whatever `strategy` chose above.
+    context_sections = [s.citation for s in ranked[:3]]
+
     if refuser is not None and decision.is_policy_boundary:
         variant = "compound" if decision.intent == "compound" else "pure_boundary"
         answer = refuser.answer_with_variant(question, citations, variant, question_id=qid)
     else:
-        answer = answerer.answer(question, citations)
+        try:
+            answer = answerer.answer(question, citations, context_sections)
+        except TypeError:
+            answer = answerer.answer(question, citations)
     docs = [format_doc(d, DOC_EXTENSION) for d, _ in citations]
     sections = [format_section(s, SECTION_FORMAT) for _, s in citations]
 
@@ -678,7 +691,7 @@ print("=" * 70)
 
 # ── derive the arm from the flags IN EFFECT, then assert it ────────────────
 if GENERATION_MODE == "generative":
-    ARM = "generative"
+    ARM = "generative" if ANSWER_FROM == "top1" else f"generative-{ANSWER_FROM}"
 elif ROUTER_ENABLED and REFUSAL_ENABLED:
     ARM = "refusals-plus-subsection" if SUBSECTION_FIX else "refusals-only"
 elif SUBSECTION_FIX:

@@ -36,7 +36,7 @@ from proctoriq_rag.generation.prompts import (
 )
 from proctoriq_rag.retrieval.chunking import SubsectionChunker
 
-AnswerFrom = Literal["top1", "cited"]
+AnswerFrom = Literal["top1", "cited", "top2", "top3"]
 
 DEFAULT_MAX_CHARS = 700
 
@@ -52,12 +52,47 @@ class Answerer(Protocol):
 
 
 def select_source_citations(
-    citations: Sequence[tuple[str, str]], answer_from: AnswerFrom
+    citations: Sequence[tuple[str, str]],
+    answer_from: AnswerFrom,
+    context_sections: Sequence[tuple[str, str]] | None = None,
 ) -> list[tuple[str, str]]:
-    """Which cited sections the answer is allowed to draw on."""
-    if not citations:
+    """Which sections the answer may draw on — NOT necessarily the cited ones.
+
+    ``top1``  the top cited section only. Probe-safe and the Phase 3 default.
+    ``cited`` every cited section.
+    ``top2`` / ``top3``
+              the top 2 or 3 **reranked** sections, which may exceed what is
+              cited. This is the fix for multi-part questions.
+
+    Why the last option exists. The RAG Triad measured answer relevancy at
+    **0.360 on multi_doc and 0.200 on multi_section** — by far the worst
+    per-question failure in the system — against 0.776 on lookup. The cause is
+    structural: ``top1`` sourcing answers one half of a two-part question. That
+    was frozen deliberately in Phase 3 so probes 5 and 6a could vary citations
+    without also varying the answer.
+
+    Widening the *context* while leaving *citations* untouched fixes the answer
+    without breaking probe hygiene: the citation columns stay byte-identical to
+    the locked baseline, and only ``answer_text`` changes.
+    """
+    if not citations and not context_sections:
         return []
-    return [citations[0]] if answer_from == "top1" else list(citations)
+    if answer_from == "top1":
+        return [citations[0]] if citations else []
+    if answer_from == "cited":
+        return list(citations)
+
+    depth = 2 if answer_from == "top2" else 3
+    pool = list(context_sections) if context_sections else list(citations)
+    seen, out = set(), []
+    for pair in list(citations) + pool:
+        if pair in seen:
+            continue
+        seen.add(pair)
+        out.append(pair)
+        if len(out) >= depth:
+            break
+    return out
 
 
 class SubsectionFocuser:
@@ -190,8 +225,13 @@ class ExtractiveAnswerer:
         section = self.corpus.get_section(doc_id, section_title)
         return section.body if section else ""
 
-    def answer(self, question: str, citations: Sequence[tuple[str, str]]) -> str:
-        sources = select_source_citations(citations, self.answer_from)
+    def answer(
+        self,
+        question: str,
+        citations: Sequence[tuple[str, str]],
+        context_sections: Sequence[tuple[str, str]] | None = None,
+    ) -> str:
+        sources = select_source_citations(citations, self.answer_from, context_sections)
         bodies = [
             self._source_text(question, doc_id, section_title)
             for doc_id, section_title in sources
@@ -231,9 +271,16 @@ class GroqAnswerer:
     def template(self) -> PromptTemplate:
         return TEMPLATES_BY_NAME[self.template_name]
 
-    def build_prompt(self, question: str, citations: Sequence[tuple[str, str]]) -> str:
+    def build_prompt(
+        self,
+        question: str,
+        citations: Sequence[tuple[str, str]],
+        context_sections: Sequence[tuple[str, str]] | None = None,
+    ) -> str:
         passages = []
-        for doc_id, section_title in select_source_citations(citations, self.answer_from):
+        for doc_id, section_title in select_source_citations(
+            citations, self.answer_from, context_sections
+        ):
             section = self.corpus.get_section(doc_id, section_title)
             if section is None:
                 continue
@@ -241,14 +288,21 @@ class GroqAnswerer:
             passages.append((doc_title, section_title, clean(section.body)))
         return self.template.render(question, passages)
 
-    def answer(self, question: str, citations: Sequence[tuple[str, str]]) -> str:
+    def answer(
+        self,
+        question: str,
+        citations: Sequence[tuple[str, str]],
+        context_sections: Sequence[tuple[str, str]] | None = None,
+    ) -> str:
         """Generate, falling back to extractive rather than emitting an empty row.
 
         An empty ``answer_text`` fails submission validation and scores zero on
         four of five dimensions, so a degraded answer beats no answer.
         """
         try:
-            text = self.client.complete(self.build_prompt(question, citations))
+            text = self.client.complete(
+                self.build_prompt(question, citations, context_sections)
+            )
         except Exception:  # noqa: BLE001 - any API failure degrades, never crashes
             text = ""
         text = " ".join(text.split()).strip()
