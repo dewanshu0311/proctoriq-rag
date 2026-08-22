@@ -146,7 +146,20 @@ validated `submission.csv`.
   having fewer moving parts and no recall ceiling.
 - Answer text is built from the **top-ranked section only**, independently of how many sections are
   cited. That keeps `answer_text` identical when only the citation configuration changes, which is
-  what makes the leaderboard probe sequence interpretable.
+  what made the leaderboard probe sequence interpretable.
+- The **submission format was resolved by probe**, not by reasoning: no `.md` extension, sections as
+  `Section N`. Probe 4 settled the grader model — `title_only` scored *identically* to
+  `full_header`, to the cent, which is only possible under exact string matching.
+
+**Measured negative, and kept in the code as evidence rather than deleted:** HyDE (recall@10
+−0.078), RAG Fusion (below the cross-encoder at 4 LLM calls per question), router score biasing
+(−1.40 out of 35, and exactly 0.0000 gain on the adversarial class it was built for), and router
+cardinality routing (neutral). The router ships for **refusal firing only**.
+
+**Every failure writes nothing.** A missing key, a deprecated model, a router that fell back to
+keywords, a truncated refusal, or a flag/arm mismatch each raises before `submission.csv` is
+written. Four separate wrong-arm mechanisms were caught this way during development, each of which
+had produced a valid-looking 50-row file that was not the arm it claimed to be.
 """))
 
     cells.append(md("""
@@ -411,12 +424,19 @@ strategy = build_strategy(CITATION_STRATEGY)
     cells.append(md("""
 ## Step 6 — Answer generation
 
-Extractive mode is deterministic and needs no API key. Generative mode uses Groq, reading the key
-from Kaggle Secrets.
+Extractive mode is deterministic and needs no API key. Generative and refusal modes use Groq,
+reading the key from Kaggle Secrets.
 
 Answer style is worth real points: accuracy and groundedness are both similarity against text
 derived from the source documents, with no LLM judge, so conversational padding actively lowers the
-score. The prompts suppress it explicitly.
+score. The prompts suppress it explicitly — zero padding phrases across 150 generated answers.
+
+**Refusals are the one generated path that ships.** Extractive mode pastes policy prose on
+adversarial questions: the right source text, but it does not decline, address the student, or
+explain. Integrity-refusal is 15% and is scored against a *correct refusal*. Measured on the 14
+adversarial questions: **8/14 declining extractive versus 13/14 with the refusal template**, and the
+RAG Triad — which never sees the answer key — scores answer-relevancy **0.493 → 0.871** on that
+subset.
 """))
     cells.append(code('''
 # A Groq key is needed for generative mode AND for the router/refusal path.

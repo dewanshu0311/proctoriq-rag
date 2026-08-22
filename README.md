@@ -1,135 +1,206 @@
 # ProctorIQ RAG
 
 A retrieval-augmented generation pipeline for proctored-assessment support, built
-for the NIAT "Building & Optimizing RAG" Kaggle challenge — and, more
-interestingly, a measurement harness for a problem that ships **no ground truth**.
+for the NIAT "Building & Optimizing RAG" Kaggle challenge.
+
+**Final: 80.15 public, 2nd place.** Leader 84.98.
+
+More interestingly, this is a case study in measuring a system that ships **no
+ground truth** — and in the several ways that measurement went wrong before it went
+right.
 
 ---
 
 ## The problem
 
 ProctorIQ runs proctored online exams. Students hit issues across five phases —
-installing the secure browser, mock-test readiness, network drops mid-exam,
-camera and face-verification warnings, and post-exam re-attempt status — and a
-support assistant has to answer from a ten-document knowledge base while doing
-two things at once:
+installing the secure browser, mock-test readiness, network drops mid-exam, camera
+and face-verification warnings, and post-exam re-attempt status. A support
+assistant must answer from a ten-document knowledge base while doing two things at
+once:
 
-1. **Cite its sources.** Every answer names the document(s) and section(s) it came
-   from, pipe-separated and aligned by position: the Nth section belongs to the
-   Nth document.
-2. **Refuse cleanly when it should.** 14 of the 50 test questions are adversarial.
-   They ask how to turn off face verification, whether a friend can watch the
-   screen, whether a medical condition exempts a student from an integrity flag.
-   The correct answer is a grounded refusal — and several of them wrap that
-   request around a *legitimate* question that must still be answered helpfully.
+1. **Cite its sources.** Every answer names the document(s) and section(s) it drew
+   on, pipe-separated and aligned by position.
+2. **Refuse cleanly when it should.** 14 of the 50 test questions are adversarial —
+   how to disable face verification, whether a friend may watch the screen, whether
+   a medical condition exempts an integrity flag. Several wrap that request around a
+   *legitimate* question that must still be answered helpfully.
 
-Given `test.csv` (50 questions), produce `submission.csv`:
-
-| Column | Meaning |
-|---|---|
-| `question_id` | from `test.csv`, unchanged |
-| `answer_text` | the pipeline's final answer |
-| `cited_docs` | source document(s), `|`-separated |
-| `cited_sections` | section(s), `|`-separated, positionally aligned with `cited_docs` |
+Given `test.csv` (50 questions), produce `submission.csv` with `question_id`,
+`answer_text`, `cited_docs`, `cited_sections`.
 
 ## Scoring
 
-Automated — semantic similarity plus rule-based matching, no LLM judge. Out of 100.
+Automated — semantic similarity plus rule-based matching, no LLM judge.
 
-| Dimension | Weight | Method |
-|---|---|---|
-| Answer accuracy | 25% | Semantic similarity to a hidden golden answer |
-| Groundedness | 25% | Semantic similarity to the actual source excerpt |
-| Retrieval quality | 20% | Match against the correct source document(s) |
-| Citation accuracy | 15% | Match against the correct section(s) |
-| Integrity-refusal | 15% | Semantic similarity to the correct refusal (adversarial only) |
+| Dimension | Weight |
+|---|---|
+| Answer accuracy | 25% |
+| Groundedness | 25% |
+| Retrieval quality | 20% |
+| Citation accuracy | 15% |
+| Integrity-refusal | 15% |
 
-The public leaderboard covers 40% of the questions; the private leaderboard covers
-the other 60% and decides the final rank.
+Public leaderboard: 40% of questions. Private: the other 60%, and it decides rank.
 
-## The interesting constraint
+---
 
-**There is no training set and no ground truth in the competition data.** You
-cannot measure whether a change helped. Every tuning decision is otherwise made
-by submitting and squinting at a leaderboard that moves for reasons you cannot
-see, on 40% of a 50-question sample.
+## The central constraint
 
-So the first thing built here is not retrieval. It is a way to know whether
-retrieval works.
+**There is no training set and no ground truth in the competition data.** You cannot
+tell whether a change helped. Every decision is otherwise made by submitting and
+squinting at a leaderboard that moves for invisible reasons on a ~20-question
+sample.
+
+So the first thing built was not retrieval. It was a way to know whether retrieval
+works.
 
 `data/validation/answer_key.yaml` is a hand-built holdout: all 50 questions read
-against all 10 documents, each tagged with its expected document(s), section(s), a
-`kind` (`lookup` / `multi_doc` / `multi_section` / `adversarial` / `trap`) and an
-honest `confidence` (`high` / `medium` / `low`) — including three entries marked
-low because they are genuinely contested, with notes on what the alternative
-reading would be.
+against all 10 documents, each tagged with expected document(s), section(s), a
+`kind`, and an honest `confidence` — including three entries marked low because
+they are genuinely contested.
 
-That key is worth something only as long as it never touches the pipeline. Two
-reasons: the competition rules forbid hardcoded answers, and a key that has
-shaped the pipeline can no longer tell you whether the pipeline works — only that
-it remembers. So the boundary is enforced structurally, by an AST walk over every
-module in `src/`, rather than by good intentions:
+That key is worth something only while it never touches the pipeline. Two
+independent guards enforce it structurally:
 
-> Every module under `src/proctoriq_rag/` **except** `evaluation/` may not import
-> the evaluation package, name `answer_key`, or read `data/validation/`. And no
-> module anywhere under `src/` may contain a `Q01`–`Q50` literal in executable
-> code.
+- **`tests/test_no_key_leakage.py`** — AST walk over `src/`. No pipeline module may
+  import the evaluation package, name `answer_key`, or read `data/validation/`. No
+  module anywhere may contain a `Q01`–`Q50` literal in executable code.
+- **`tests/test_no_key_leakage_scripts.py`** — taint analysis over `scripts/`.
+  Measurement harnesses legitimately read the key, so the rule is directional:
+  **the key may determine what we MEASURE, never what the PIPELINE DOES.**
 
-See [`tests/test_no_key_leakage.py`](tests/test_no_key_leakage.py).
+The second guard exists because the first one missed a real leak: a harness fired
+refusals on `qid in adversarial`, letting the key decide pipeline behaviour.
 
-## What can actually be measured locally
+---
 
-| Dimension | Weight | Status |
-|---|---|---|
-| Retrieval quality | 20% | **Exact** — predicted document set vs the key's |
-| Citation accuracy | 15% | **Exact** — predicted `(doc, section)` pairs vs the key's |
-| Groundedness | 25% | Proxy — faithful method, uncalibrated magnitude |
-| Answer accuracy | 25% | Unmeasured — no golden answers exist |
-| Integrity-refusal | 15% | Unmeasured — adversarial subset only |
+## Results
 
-35% is measured exactly. The scorer reports the composite twice — raw, and
-renormalized over measured weight — and prints how much of the real metric is
-invisible, every time. Unmeasured dimensions report `None` and are excluded; they
-are never quietly substituted with a correlated number, because a visible gap can
-be closed and a papered-over one cannot.
+### What the leaderboard resolved
 
-**One caveat is repeated in three places on purpose:** the grader's embedding
-model is unknown. Our groundedness figure compares our own configs against each
-other. It is not an estimate of the real score, and `groundedness 0.82` does not
-mean "we would score 82". See [`docs/DECISIONS.md`](docs/DECISIONS.md) D-007.
+Five probes, one variable each, `answer_text` held byte-identical:
+
+| probe | change | public | Δ | resolved |
+|---|---|---|---|---|
+| 1 | baseline (`full_header`) | 68.02 | — | reference |
+| 2 | `.md` extension added | 52.36 | −15.66 | **no extension** |
+| 3 | `number_only` sections | **79.27** | +11.25 | **`number_only`** |
+| 4 | `title_only` sections | 68.02 | **0.00** | grader matches **exactly** |
+| 5 | `topk-2` | 76.90 | −2.37 | **F1 partial credit** |
+
+Probe 4 is the decisive one: `title_only` tying `full_header` **to the cent** is
+only possible if both are simply wrong. That fixes the grader model as *exact string
+match per element, F1 across the set*.
+
+Probe 2 also measures the answer half directly — it zeroes both citation dimensions,
+so its 52.36 **is** the answer half. Full decomposition:
+
+| | achieved | available | headroom |
+|---|---|---|---|
+| retrieval | 15.66 | 20 | 4.34 |
+| citation | 11.25 | 15 | 3.75 |
+| answer half | 52.36 | 65 | 12.64 |
+| **total** | **79.27** | 100 | |
+
+### What measured negative
+
+Kept in the codebase with their numbers, because a documented negative is worth
+more than the code is as a feature:
+
+| component | result |
+|---|---|
+| **HyDE** | recall@10 −0.078, citation F1 −0.200. Failed even on `policy_boundary`, its predicted best case |
+| **RAG Fusion** | beats the hybrid first stage (doc F1 0.767 vs 0.733) but stays well below the cross-encoder, at 4 LLM calls per question |
+| **Router score biasing** | −1.40 out of 35; gained **exactly 0.0000** on adversarial, the class it was built for; regressed lookup 1.000 → 0.966 |
+| **Router cardinality** | 26.88 vs 26.93 off — neutral |
+| **Chunk size** | all six chunkers tied at recall@10 0.9375 |
+
+### What measured positive
+
+| change | evidence |
+|---|---|
+| **Cross-encoder reranking** | +17 points at the *median* config (0.36 → 0.53 citation-exact). Lookup document-F1 reaches 1.000 |
+| **Refusal template** | 8/14 → 13/14 declining; **RAG Triad answer-relevancy on adversarial 0.493 → 0.871** |
+| **Subsection fix** | Q03 was receiving the wrong error's passage |
+
+The refusal decision rests on the Triad — the only evaluation here that never
+consults the answer key — not on the leaderboard, which returned an inconclusive
++0.56.
+
+---
 
 ## Architecture
 
 ```
 src/proctoriq_rag/
-├── config.py              # the two unresolved submission-format flags live here
-├── corpus/loader.py       # markdown -> 53 sections. Splits on ## only, never ###
-├── submission/writer.py   # the only place format flags are applied
-├── evaluation/            # measurement only. The pipeline may never import this
-│   ├── answer_key.py
-│   ├── metrics.py
-│   └── scorer.py
-└── retrieval/ routing/ generation/   # Phase 1+
+├── config.py              probe-resolved submission format
+├── corpus/loader.py       markdown -> 53 sections. Splits on ## only, never ###
+├── retrieval/
+│   ├── chunking.py        section / recursive / subsection
+│   ├── embeddings.py      content-addressed disk cache
+│   ├── retriever.py       dense (FAISS) / BM25 / hybrid
+│   ├── reranker.py        cross-encoder, exhaustive over all 53 sections
+│   ├── citation.py        aggregation + cardinality strategies
+│   ├── hyde.py            mandated; measured negative
+│   └── fusion.py          mandated; measured negative
+├── routing/               LLM intent classifier; ships for refusal firing only
+├── generation/            extractive + Groq, refusal templates
+├── evaluation/            answer key, scorer, alternates, RAG Triad
+└── submission/writer.py   the only place format flags are applied
 ```
 
 Full detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-### Two design choices worth naming
+---
 
-**`###` is content, not a section boundary.** Document 01's "Section 2: Common
-Installation Errors" contains three distinct errors as `###` subheadings, and Q01,
-Q02 and Q03 each ask about one of them — but all three cite the same section,
-because that is the section they live in. Splitting on `###` would invent sections
-the grader has never seen and break citations on roughly a third of the test set.
-The 53-section total is asserted in the test suite so a parsing regression fails
-loudly.
+## Four ways a wrong submission almost shipped
 
-**Two format questions are unresolved, so they are flags rather than guesses.**
-Does `cited_docs` carry the `.md` extension? `sample_submission.csv` says no, the
-competition description says "filename". What shape is `cited_sections` — the full
-header, `Section 2`, or `Common Installation Errors`? Every variant is implemented
-and tested; both will be settled by leaderboard probe. Guessing wrong costs up to
-35% of the score, and supporting all of them costs one serialization branch.
+Each produced a **valid-looking 50-row `submission.csv` that was not the arm it
+claimed to be**. Each is now a hard guard that raises before writing:
+
+1. **No Groq key** → router silently fell back to keywords, refusals no-op'd.
+2. **Model deprecated mid-competition** → `llama-3.1-8b-instant` returned 404 after
+   it had already produced a scored submission. Every router call failed; the
+   `stats["llm"] == 0` guard caught it.
+3. **Reasoning-model truncation** → `finish_reason="length"` with empty content fell
+   back to extractive text. The `compound` prompt ran the longest traces and sat 35
+   tokens from the cap.
+4. **Flags not flipped** → the run summary correctly printed the arm, and it was
+   submitted as a different one anyway. A description is not a check, so
+   `EXPECTED_ARM` now asserts.
+
+The lesson generalises: **a wrong artefact that looks correct is worse than a
+crash**, and every one of these was caught by a guard rather than by review.
+
+## Three measurement errors, same shape
+
+All three were *comparisons where more than one thing changed*:
+
+- **Phase 1** — a max over 312 configs compared against a max over 24 looked like a
+  regression. Corrected by subsampling: the cross-encoder is +17 at the median.
+- **Phase 2** — leaderboard agreement compared by row identity across 36 *tied*
+  configs reported a false "MATERIAL DISAGREEMENT". It was measuring the sort's
+  tie-breaking.
+- **Phase 4** — a prompt edit between two router runs was reported as sampling
+  nondeterminism. That claim reached the config file before being retracted (D-036).
+
+## Prediction calibration
+
+Every probe stated a predicted delta before submitting. Four consecutive landed low,
+and the ratio **falls as the effect shrinks**:
+
+| probe | predicted | observed | ratio |
+|---|---|---|---|
+| 2 | −16.9 | −15.66 | 0.93 |
+| 5 | −3.4 | −2.37 | 0.70 |
+| 6a | +1.5 | +0.56 | 0.37 |
+| 7 | +1.5 | +0.32 | 0.21 |
+
+Mechanism reasoning establishes direction well and magnitude badly. Revised rule:
+**×0.90 above 10 points, ×0.70 for 3–10, ×0.30 below 3.**
+
+---
 
 ## Running it
 
@@ -139,50 +210,46 @@ Requires Python ≥ 3.10.
 pip install -e ".[dev,embed]"
 ```
 
-Run the test suite — this is the gate for every phase:
-
 ```bash
 python -m pytest
 ```
-
-Validate the answer key against the corpus (expects 53 sections, 50 entries, zero problems):
 
 ```bash
 python scripts/validate_key.py
 ```
 
-See where naive semantic retrieval lands before any reranking exists:
-
 ```bash
-python scripts/diagnose_sections.py
+python scripts/export_notebook.py
 ```
 
-The diagnostic embeds all 50 questions against all 53 sections with a local
-sentence-transformers model and prints the top-5 per question, marking the key's
-expected section and its rank. It needs no API key and makes no network calls
-beyond a one-time model download. Its purpose is to replace one person's reading
-of the corpus with evidence about the corpus — particularly for the three
-low-confidence key entries.
+Other entry points: `sweep_retrieval.py`, `sweep_rerank.py`, `sweep_router.py`,
+`measure_refusals.py`, `measure_hyde_fusion.py`, `run_triad.py`,
+`run_pipeline.py --probe-6a`.
+
+Generative paths need `GROQ_API_KEY` (or `GROQ_API_KEY_1..9`) in `.env`. The
+extractive path needs no key at all.
 
 ### Competition data
 
-`data/raw/` is gitignored: the competition rules prohibit redistributing the
-provided data, so the knowledge base, `test.csv` and `sample_submission.csv` are
-not committed. `data/validation/answer_key.yaml` **is** committed — it is our own
-work, not theirs.
+`data/raw/` is gitignored — the rules prohibit redistributing it. Place the 10
+`.md` files in `data/raw/kb/` and `test.csv` / `sample_submission.csv` in
+`data/raw/`. Tests needing them skip cleanly when absent.
+`data/validation/answer_key.yaml` **is** committed: it is our own work.
 
-To run against the real data, place the 10 `.md` files in `data/raw/kb/` and
-`test.csv` / `sample_submission.csv` in `data/raw/`. Tests that need them skip
-cleanly when they are absent.
+---
 
-## Decision log
+## Documentation
 
-Every non-obvious choice is recorded in [`docs/DECISIONS.md`](docs/DECISIONS.md)
-with its alternatives, reasoning and evidence — including the ones still open and
-the one place the stated spec had to be corrected to be enforceable.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — 46 decisions with alternatives,
+  reasoning and evidence, including every retraction
+- [`docs/SUBMISSION_LOG.md`](docs/SUBMISSION_LOG.md) — every probe, predicted before
+  observed
+- [`docs/PROBES.md`](docs/PROBES.md) — probe design and pre-registered decision rules
+- [`docs/FINAL_SUBMISSION.md`](docs/FINAL_SUBMISSION.md) — the two selected arms
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 ## Status
 
-**Phase 0 complete** — repository scaffold, corpus loader, answer-key validator,
-local scorer, submission writer, leakage guard, retrieval diagnostic. 165 tests
-passing. No retrieval, embedding, LLM or pipeline logic yet; that is Phase 1.
+**Complete.** 508 tests passing. Two submissions selected:
+`probe-7-subsection-fix-retry` (80.15) and `probe-3-section-number` (79.27, tagged
+`v1.0-locked-79.27`, deterministic, no runtime LLM dependency).

@@ -10,6 +10,34 @@ also the script for the required demo video.
 
 ---
 
+## Resolution index
+
+Several entries below were written as **OPEN** and were resolved later. The entry
+text is left as it was written — the reasoning at the time is part of the record —
+so this index is the authority on current status.
+
+| decision | was | resolved by | outcome |
+|---|---|---|---|
+| **D-004** doc-name format | OPEN, probe | probe 2 | **no `.md` extension**. Adding it cost 15.66 |
+| **D-005** section-string format | OPEN, probe | probes 3 & 4 | **`number_only`**. `full_header` was wrong by 11.25 |
+| **D-006** dedupe vs multiset doc scoring | OPEN, unknown | probe 5 | moot — grader gives F1 partial credit, so the distinction never bites |
+| **D-022** cardinality is intent, not score | OPEN, to the router | D-035 | router cardinality measured **neutral**; `topk-1` ships |
+| **D-025** grader matching method | OPEN, highest-value probe | probe 5 | **exact string match per element, F1 across the set** |
+| **D-030** Q15 nuance trap | OPEN, Phase 4 mandate | D-034 | **not fixed**. Routing gained 0.0000 on it; accepted as a known miss |
+| **D-032** probe plan | OPEN, awaiting submissions | probes 1–7 | all executed; see [SUBMISSION_LOG.md](SUBMISSION_LOG.md) |
+| **D-037** refusals | OPEN, probe 6a decides | probe 6a + D-045 | **ship**. Probe inconclusive (+0.56); RAG Triad decided it |
+
+**Genuinely still open, and deliberately so:**
+
+- **D-007** — the grader's embedding model remains unknown. Every groundedness
+  figure in this log is comparative only. This never became resolvable and the
+  caveat travels with every number that depends on it.
+- **D-038** — the alternate readings for Q14, Q28, Q31, Q35. Two independent model
+  families bury the same four sections, but the evidence is confounded with a known
+  reranker weakness on policy boundaries. `answer_key.yaml` was never modified.
+
+---
+
 ## D-001 — `###` subheadings are content, not section boundaries
 
 **Date:** 2026-08-08 · **Phase:** 0 · **Status:** settled
