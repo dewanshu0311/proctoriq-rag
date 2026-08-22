@@ -1,8 +1,9 @@
 # Final Submission — Selected
 
-**Final standing: 80.15 public, 2nd place. Leader 84.98.**
+**Final standing: 80.15 public. Leader 87.00.**
 
-Two submissions selected manually. Kaggle's auto-selection was **not** allowed to
+Two submissions selected manually. **Unchanged by probe 6b** — see the closing
+measurement below, which tested the full generative arm and retired it. Kaggle's auto-selection was **not** allowed to
 choose: it picks by best public score, and the public set is ~20 questions against
 a private 30 that decides the rank.
 
@@ -122,12 +123,61 @@ direction.
 
 ---
 
+## Closing measurement — probe 6b, and why the shape holds
+
+The last probe tested the one structural alternative left: **generate every
+answer** rather than extracting and generating only at the refusal boundary.
+It scored **79.25**.
+
+Removing the confound (probe 6b also switched refusals off and left
+`SUBSECTION_FIX` inert, worth 0.56 + 0.32 together), the implied cost of
+generation itself is **−0.02** against the extractive baseline of 79.27 — inside
+noise, and nowhere near the **+5.1** three local instruments predicted.
+
+**This is the evidence the selected arms were previously missing.** Slot 1's
+design — extract everywhere, generate only where extraction demonstrably fails —
+had rested on an argument: that policy dumps are not refusals, and that the fix
+should be narrow. It now rests on three leaderboard measurements that decompose
+cleanly:
+
+| intervention | scope | leaderboard |
+|---|---|---|
+| generate every answer | all 50 | **−0.02** |
+| refusal template | the 18 boundary questions | **+0.56** |
+| subsection fix | the 5 `###`-dense sections | **+0.32** |
+
+Generation applied broadly buys nothing. Generation applied exactly where
+extraction fails buys +0.56. The two narrow interventions in slot 1 are the whole
+of the measured gain, and the broad one is the arm that was tested and dropped.
+
+That is a stronger statement about the private split than the public 0.88 gap is,
+because it is a claim about *mechanism* — and the private 30 holds proportionally
+more adversarial questions than the public 20, which is where the +0.56 lives.
+
+**What probe 6b did not settle.** The predicted breakdown was groundedness −3.0
+against answer accuracy +3.5 and refusal +3.0. A net of ≈0 is equally consistent
+with "both moved and cancelled" and with "neither moved". One scalar per
+submission cannot separate them, and probe 2's trick for reading the answer half
+directly was never spent on a generative arm. See D-050.
+
+---
+
 ## What was deliberately not done
 
 The remaining measured headroom is ~8 points on citations and ~12 on answers, and
 it was not pursued. Everything cheap has been measured; what remains is either
 inconclusive (refusals, subsection fix) or negative (HyDE, RAG Fusion, router score
-biasing, cardinality routing). With four probes landing at a falling fraction of
+biasing, cardinality routing, full generative, adaptive citation cardinality).
+
+Two of those negatives arrived last and are worth naming, because they close the
+two largest apparent headrooms:
+
+- **The citation half's ~8 points are not reachable by cardinality** (D-049). The
+  loss is 14 questions where the key wants two sections; only 4 have both inside
+  the reranker's top-2, and the rank1→rank2 confidence gap is *larger* on
+  multi-section questions than single-section ones, so any adaptive threshold
+  fires on precisely the wrong set.
+- **The answer half's ~12 points are not reachable by generating more** (D-050). With four probes landing at a falling fraction of
 their predicted effect, further tuning would be optimising against noise on a
 20-question public sample — which is precisely how a rank-1 public position became
 5th private last time.

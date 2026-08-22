@@ -234,6 +234,9 @@ SUBSECTION_FIX      = False
 #
 #    "extractive-locked"         all flags off  -> reproduces v1.0-locked-79.27
 #    "extractive-subsection"     SUBSECTION_FIX only
+#    "...+inert-subsection"      SUBSECTION_FIX set where it has no effect. The
+#                                suffix is deliberate: acknowledge it in
+#                                EXPECTED_ARM or clear the flag.
 #    "refusals-only"             ROUTER + REFUSAL
 #    "refusals-plus-subsection"  ROUTER + REFUSAL + SUBSECTION_FIX   <- PROBE 7
 #    "generative"                GENERATION_MODE = "generative", ANSWER_FROM = "top1"
@@ -516,9 +519,22 @@ if answerer is None:
     )
 
 # The subsection fix is a flag, not a default, so probe 7 can isolate it.
-if SUBSECTION_FIX and hasattr(answerer, "fit_focuser"):
+#
+# It only has an effect on the EXTRACTIVE path: the focuser lives inside
+# ExtractiveAnswerer, and GroqAnswerer has no `fit_focuser` at all. Probe 6b was
+# submitted with SUBSECTION_FIX = True in generative mode, where it did nothing,
+# and the run summary printed a bare "off" that read as a configuration choice
+# rather than an ignored flag. A True flag that silently does nothing is the same
+# class of defect as the four wrong-arm submissions, so it is now reported as an
+# ignored flag and is carried into the arm name, forcing EXPECTED_ARM to say so.
+SUBSECTION_ACTIVE = SUBSECTION_FIX and hasattr(answerer, "fit_focuser")
+if SUBSECTION_ACTIVE:
     answerer.fit_focuser(question_texts, reranker)
     print("subsection fix: ON (cross-encoder subsection selection)")
+elif SUBSECTION_FIX:
+    print("subsection fix: REQUESTED BUT INERT — the subsection focuser is part of")
+    print(f"                the extractive answerer; {answerer.name!r} has none.")
+    print("                Reflected in the arm name; not a silent no-op.")
 else:
     print("subsection fix: off (lexical overlap)")
 
@@ -692,9 +708,11 @@ print("=" * 70)
 # ── derive the arm from the flags IN EFFECT, then assert it ────────────────
 if GENERATION_MODE == "generative":
     ARM = "generative" if ANSWER_FROM == "top1" else f"generative-{ANSWER_FROM}"
+    if SUBSECTION_FIX:
+        ARM += "+inert-subsection"
 elif ROUTER_ENABLED and REFUSAL_ENABLED:
-    ARM = "refusals-plus-subsection" if SUBSECTION_FIX else "refusals-only"
-elif SUBSECTION_FIX:
+    ARM = "refusals-plus-subsection" if SUBSECTION_ACTIVE else "refusals-only"
+elif SUBSECTION_ACTIVE:
     ARM = "extractive-subsection"
 else:
     ARM = "extractive-locked"

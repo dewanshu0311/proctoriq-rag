@@ -204,3 +204,69 @@ an unrecorded caveat is worse than no score, because it will be trusted later.
 | 4 | |
 | 5 | |
 | 6 | |
+
+
+---
+
+## Probe 6b — full generative, and the confound in its headline number
+
+| probe | change | predicted | public | Δ vs 80.15 |
+|---|---|---|---|---|
+| 6b | `GENERATION_MODE = "generative"`, `answer-first-explained`, `answer_from="top2"`, router and refusals **off** | raw +5.1, shrunk **+3.6** (range −1 to +6) | **79.25** | **−0.90** |
+
+### The −0.90 is not the cost of generation
+
+Probe 6b differs from probe 7 in **three** ways, not one. Against probe 7 it turned
+generation on, refusals **off**, and left `SUBSECTION_FIX` set in a mode where it
+does nothing. The right baseline is therefore `extractive-locked` at 79.27, not
+probe 7 at 80.15:
+
+| component | measured on the leaderboard |
+|---|---|
+| extractive-locked baseline | 79.27 |
+| refusal template (probe 6a) | +0.56 |
+| subsection fix (probe 7) | +0.32 |
+| **predicted probe 6b if generation were neutral** | **79.27** |
+| observed | 79.25 |
+| **implied generation delta** | **−0.02** |
+
+0.56 + 0.32 = 0.88 of the 0.90 gap is the two components switched off alongside
+the change under test. **Generation itself is indistinguishable from extraction**
+— 0.02 on a 20-question public sample is far inside the noise band.
+
+That is a weaker claim than "full generative loses" and a much stronger one than
+the raw number suggests: generation is not harmful, it is *worthless here*, and
+the +5.1 the local instruments promised did not arrive in any part.
+
+Additivity is an assumption, not a measurement. It is the same assumption the
+score decomposition already rests on, and it has held to the cent twice, but one
+scalar per submission cannot verify it.
+
+### What cannot be decomposed
+
+The predicted breakdown was groundedness **−3.0** against answer accuracy **+3.5**
+and refusal **+3.0**. The observed net is ≈0, which is equally consistent with
+"both dimensions moved as predicted and cancelled" and with "neither moved much".
+**One scalar cannot separate them**, and no probe run so far isolates the answer
+half under generation. Probe 2's trick — zeroing citations with the `.md`
+extension to read the answer half directly — would do it, and has not been spent.
+
+### Calibration, updated
+
+| probe | predicted | observed | ratio |
+|---|---|---|---|
+| 2 | −16.9 | −15.66 | 0.93 |
+| 5 | −3.4 | −2.37 | 0.70 |
+| 6a | +1.5 | +0.56 | 0.37 |
+| 7 | +1.5 | +0.32 | 0.21 |
+| **6b** | **+3.6** | **−0.02** | **0.00** |
+
+The ratio has fallen monotonically across five probes and has now reached zero.
+The ×0.90 / ×0.70 / ×0.30 shrinkage rule survives for **mechanism-derived**
+predictions — probes 2 and 5, where the change altered what the grader could
+string-match. It does not survive for **proxy-derived** ones. Probe 6b's +5.1 came
+from three local instruments, and no amount of shrinkage would have produced −0.02
+from it.
+
+Revised rule: a prediction sourced from local proxies rather than from grader
+mechanism gets **no** credit for magnitude and only weak credit for direction.

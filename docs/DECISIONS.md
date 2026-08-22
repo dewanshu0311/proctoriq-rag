@@ -1717,3 +1717,88 @@ router was not weak, the signal it was asked to act on points the wrong way.
 Retrieval on lookup is at ceiling (doc F1 1.000); the remaining headroom is
 concentrated in adversarial questions whose second section the cross-encoder does
 not surface at all.
+
+---
+
+## D-050 — Probe 6b refutes D-047. Three local instruments, all wrong.
+
+**Date:** 2026-08-22 · **Phase:** 5 · **Status:** settled · **Retracts:** D-047's
+selection
+
+**Probe 6b scored 79.25.** D-047 recommended full generative on an estimated
+**+5.1**. The leaderboard delivered **−0.02** once the confound is removed (see
+`SUBMISSION_LOG.md`: probe 6b also switched refusals off and left `SUBSECTION_FIX`
+inert, which together account for 0.88 of the headline −0.90).
+
+**The failure is not that a proxy was noisy. It is that three proxies agreed.**
+
+D-048 argued that two instruments pointing the same way is not corroboration when
+they share a bias, and built a third with a deliberately opposite one. All three
+then agreed that generation was worth +4.4 to +5.3:
+
+| instrument | bias, as documented before the run | said |
+|---|---|---|
+| groundedness (cosine to source) | toward extraction | generative −0.064 |
+| RAG Triad answer relevancy | blind to length | generative +0.284 |
+| synthetic reference answers | **toward generation — an LLM wrote the reference** | generative +0.131 |
+
+The third instrument's bias was written into its own docstring before it was ever
+run: *"biased toward generation (an LLM wrote the reference)"*. It was then
+allowed to carry a quarter of the weighted estimate undiscounted, and it is the
+dimension where generative gained most. Naming a bias is not controlling for it.
+
+The one instrument that predicted correctly was the groundedness proxy — the only
+one measured against text the competition actually contains. Every proxy scored
+against **generated** reference text inherited the thing it was meant to detect.
+
+**What survives.** The shipped split — extract everywhere, generate only where
+extraction genuinely fails — now rests on leaderboard evidence rather than on
+argument: generation is worth ≈0 on its own (probe 6b) while the refusal template
+is worth +0.56 (probe 6a) and the subsection fix +0.32 (probe 7). Both of those
+are narrow interventions on the questions where extraction demonstrably fails.
+
+**What does not survive.** D-047's selection of arm D, and the general practice of
+treating a weighted local estimate as a leaderboard prediction. The estimate was
+73.33 for an arm that scores 79.27 — the scale was known to be wrong, and the
+delta was trusted anyway.
+
+**Rejected alternative:** re-running the sweep with the reference-answer proxy
+down-weighted. It would produce a number that agrees with the leaderboard *because
+it was tuned to*, and would teach nothing. The instruments stay as they are, with
+this entry attached.
+
+---
+
+## D-051 — A True flag that does nothing is a wrong-arm bug
+
+**Date:** 2026-08-22 · **Phase:** 5 · **Status:** settled
+
+Probe 6b was submitted with `SUBSECTION_FIX = True` in generative mode, where the
+flag has no effect: the subsection focuser lives in `ExtractiveAnswerer`, and
+`GroqAnswerer` has no `fit_focuser` at all. The notebook printed
+`subsection fix: off`, which is *true* and reads as a configuration choice rather
+than an ignored instruction. `EXPECTED_ARM = "generative-top2"` matched, so the
+guard passed and the file was written.
+
+This is the fifth instance of the pattern the ARM guard exists to stop — a
+valid-looking 50-row submission that is not the arm it claims to be — and the
+first that the guard itself let through, because the guard derived the arm from
+the flags *requested* rather than the flags *in effect*.
+
+**Fix, in the exporter:**
+
+- `SUBSECTION_ACTIVE = SUBSECTION_FIX and hasattr(answerer, "fit_focuser")`
+- the run summary distinguishes `off` from `REQUESTED BUT INERT`, naming the
+  answerer that has no focuser
+- inertness is carried into the arm name as an `+inert-subsection` suffix, so
+  `EXPECTED_ARM` must acknowledge it
+
+The suffix is deliberately awkward. Blocking the run outright would be wrong —
+the configuration is legal — but it should be impossible to submit it without
+having typed the words. Verified across all seven flag combinations: probe 6b's
+exact config now derives `generative-top2+inert-subsection` and raises against
+the `EXPECTED_ARM` it was actually submitted with.
+
+**Alternative rejected:** making the flag work in generative mode by focusing the
+passages sent to the prompt. That is a behaviour change disguised as a bug fix,
+and probe 6b has since retired the generative path anyway.

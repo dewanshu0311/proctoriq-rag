@@ -3,7 +3,7 @@
 A retrieval-augmented generation pipeline for proctored-assessment support, built
 for the NIAT "Building & Optimizing RAG" Kaggle challenge.
 
-**Final: 80.15 public, 2nd place.** Leader 84.98.
+**Final: 80.15 public.** Leader 87.00.
 
 More interestingly, this is a case study in measuring a system that ships **no
 ground truth** — and in the several ways that measurement went wrong before it went
@@ -88,6 +88,11 @@ Five probes, one variable each, `answer_text` held byte-identical:
 | 3 | `number_only` sections | **79.27** | +11.25 | **`number_only`** |
 | 4 | `title_only` sections | 68.02 | **0.00** | grader matches **exactly** |
 | 5 | `topk-2` | 76.90 | −2.37 | **F1 partial credit** |
+| 6b | full generative | 79.25 | −0.02\* | **generation buys nothing broadly** |
+
+\* against the extractive baseline of 79.27. The headline −0.90 against probe 7
+is a three-variable comparison: 6b also switched refusals off (+0.56) and left
+`SUBSECTION_FIX` inert (+0.32).
 
 Probe 4 is the decisive one: `title_only` tying `full_header` **to the cent** is
 only possible if both are simply wrong. That fixes the grader model as *exact string
@@ -113,7 +118,9 @@ more than the code is as a feature:
 | **HyDE** | recall@10 −0.078, citation F1 −0.200. Failed even on `policy_boundary`, its predicted best case |
 | **RAG Fusion** | beats the hybrid first stage (doc F1 0.767 vs 0.733) but stays well below the cross-encoder, at 4 LLM calls per question |
 | **Router score biasing** | −1.40 out of 35; gained **exactly 0.0000** on adversarial, the class it was built for; regressed lookup 1.000 → 0.966 |
-| **Router cardinality** | 26.88 vs 26.93 off — neutral |
+| **Router cardinality** | 26.88 vs 26.93 off — neutral. Mechanism found later: the rank1→rank2 gap is *larger* on multi-section questions (0.132 vs 0.028), so the signal is **inverted** |
+| **Full generative** | −0.02 on the leaderboard against a local estimate of **+5.1** |
+| **Answer length** | swept 231→1050 chars; flat. Groundedness and answer accuracy trade at par |
 | **Chunk size** | all six chunkers tied at recall@10 0.9375 |
 
 ### What measured positive
@@ -196,9 +203,32 @@ and the ratio **falls as the effect shrinks**:
 | 5 | −3.4 | −2.37 | 0.70 |
 | 6a | +1.5 | +0.56 | 0.37 |
 | 7 | +1.5 | +0.32 | 0.21 |
+| 6b | +3.6 | −0.02 | **0.00** |
 
-Mechanism reasoning establishes direction well and magnitude badly. Revised rule:
+Mechanism reasoning establishes direction well and magnitude badly:
 **×0.90 above 10 points, ×0.70 for 3–10, ×0.30 below 3.**
+
+Probe 6b broke that rule, and the split is instructive. Probes 2 and 5 were
+predicted from **grader mechanism** — what the scorer could string-match — and
+shrinkage worked. Probe 6b was predicted from **local proxies**, and no shrinkage
+factor produces −0.02 from +5.1. Proxy-derived predictions get direction only.
+
+### Three instruments agreed, and all three were wrong
+
+The strongest result in the project is a negative one about its own method.
+Generation was recommended on +4.4 to +5.3 from three deliberately
+differently-biased instruments:
+
+| instrument | documented bias | verdict on generation |
+|---|---|---|
+| groundedness (cosine to source) | toward extraction | −0.064 |
+| RAG Triad relevancy | blind to length | +0.284 |
+| synthetic reference answers | **toward generation** | +0.131 |
+
+The third instrument's bias was written in its own docstring before it ever ran,
+and it was still allowed to carry a quarter of the weighted estimate undiscounted.
+The only proxy that predicted correctly was the one measured against text the
+competition actually contains. **Naming a bias is not controlling for it.**
 
 ---
 
