@@ -270,3 +270,76 @@ from it.
 
 Revised rule: a prediction sourced from local proxies rather than from grader
 mechanism gets **no** credit for magnitude and only weak credit for direction.
+
+
+---
+
+## Private scores, released at close
+
+Every probe, both splits. Public is ~20 questions, private the other 30.
+
+| submission | private | public | priv − pub | |
+|---|---|---|---|---|
+| probe-1-baseline | 68.10 | 68.02 | +0.08 | `full_header` |
+| probe-2-md-extension | 51.43 | 52.36 | **−0.93** | citations zeroed |
+| probe-3-section-number | 79.77 | 79.27 | +0.50 | locked — **selected** |
+| probe-4-section-title | 68.10 | 68.02 | +0.08 | `title_only` |
+| probe-5-topk2 | 76.32 | 76.90 | **−0.58** | `topk-2` |
+| probe-6a-refusals-retry | 81.13 | 79.83 | +1.30 | refusals |
+| probe-7-subsection-fix | 79.77 | 79.27 | +0.50 | **wrong arm** |
+| probe-7-subsection-fix-retry | **81.39** | 80.15 | +1.24 | refusals + subsection — **selected** |
+| probe-6b-generative | 79.94 | 79.25 | +0.69 | full generative |
+
+### Two exact ties, each confirming a conclusion on 50 questions instead of 20
+
+**probe-1 ≡ probe-4 — 68.10 and 68.02, both splits.** `full_header` and `title_only`
+are different strings and scored identically to the cent *twice*. Probe 4's
+conclusion — the grader matches exactly, so both are simply wrong — no longer rests
+on a single 20-question coincidence.
+
+**probe-3 ≡ probe-7(first) — 79.77 and 79.27, both splits.** These were submitted
+as different arms. They are byte-identical outputs, which is exactly what the
+wrong-arm diagnosis claimed at the time: the first probe-7 run shipped the locked
+extractive config. Independent confirmation, and incidentally a determinism check
+on the locked arm across two separate Kaggle runs a week apart.
+
+### The refusal template is worth 2.4× more on the split that counted
+
+| component | private | public | ratio |
+|---|---|---|---|
+| refusal template | **+1.36** | +0.56 | **2.43×** |
+| subsection fix | +0.26 | +0.32 | 0.81× |
+| full generative | +0.17 | −0.02 | ≈0 either way |
+| **selected arm vs deterministic floor** | **+1.62** | +0.88 | 1.84× |
+
+`FINAL_SUBMISSION.md` argued for probe 7 on mechanism and explicitly refused to
+treat the +0.88 public gap as evidence, predicting that *"the private split favours
+it slightly — 30 questions holds ~8–9 adversarial rather than the ~5.6 in the
+public 20, so a genuine per-question refusal effect has more room to appear there."*
+
+Direction correct, magnitude understated. A proportional draw would put the same
+28% adversarial in both splits, so 2.43× suggests the private 30 drew
+disproportionately many — plausible when 14 questions are split 40/60, but not
+verifiable from here.
+
+### The calibration table was measuring the public split, not the predictions
+
+This is the part worth retracting. Probe 6a's pre-registered prediction was
+**"+1 to +2 realistic"**. Public returned +0.56, which read as another entry in a
+monotonic decline (0.93 → 0.70 → 0.37 → 0.21) and drove a revised shrinkage rule.
+Private returned **+1.36** — inside the original band.
+
+| probe | predicted | public | ratio | private | ratio |
+|---|---|---|---|---|---|
+| 6a | +1 to +2 | +0.56 | 0.37 | **+1.36** | **~0.9** |
+| 7 | +0.6 to +0.9 | +0.32 | 0.21 | +0.26 | 0.35 |
+| 6b | +3.6 | −0.02 | 0.00 | +0.17 | 0.05 |
+
+Probe 6a was not an over-prediction. It was a correct prediction read against a
+20-question instrument that could not resolve it. The shrinkage rule was fitted to
+that instrument's noise and then applied to probe 7, where it produced a *lower*
+prediction that also missed.
+
+What survives: probe 6b's failure is real on both splits, because it was a proxy-derived
+prediction and no split rescues it. What does not survive: the claim that mechanism
+reasoning systematically over-predicts. On the split that decided the rank, it did not.

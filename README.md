@@ -112,6 +112,30 @@ Five probes, one variable each, `answer_text` held byte-identical:
 is a three-variable comparison: 6b also switched refusals off (+0.56) and left
 `SUBSECTION_FIX` inert (+0.32).
 
+Probe 4 is confirmed twice over: when the private scores were released,
+`title_only` and `full_header` tied at **68.10 private and 68.02 public** — the
+same string-match conclusion, now on 50 questions rather than 20.
+
+### The public leaderboard was the unreliable instrument
+
+Private scores at close reframed the probe sequence:
+
+| component | private | public | ratio |
+|---|---|---|---|
+| refusal template | **+1.36** | +0.56 | **2.43×** |
+| subsection fix | +0.26 | +0.32 | 0.81× |
+| full generative | +0.17 | −0.02 | ≈0 either way |
+| **selected arm vs deterministic floor** | **+1.62** | +0.88 | 1.84× |
+
+Probe 6a's pre-registered prediction was "+1 to +2". Public said +0.56 and it was
+logged as another over-prediction. Private said **+1.36** — inside the band. The
+calibration rule built from that apparent decline was fitted to a 20-question
+sample's noise, and it has been [retracted](docs/DECISIONS.md) along with the claim
+that mechanism reasoning over-predicts.
+
+Four ratios from one noisy sample is not four observations of a bias. It is one
+observation of a sample.
+
 Probe 4 is the decisive one: `title_only` tying `full_header` **to the cent** is
 only possible if both are simply wrong. That fixes the grader model as *exact string
 match per element, F1 across the set*.

@@ -16,12 +16,24 @@ That is a weak signal on its own — one competition, one split, and the gap to 
 leader is 5.95 points that no amount of selection discipline would have closed.
 What it does rule out is the failure mode this project was built to avoid.
 
-**Open question worth checking on the Submissions tab:** which of the two selected
-arms actually produced 81.39. If it was `probe-3-section-number`, the deterministic
-floor beat the mechanism-justified arm on the held-out split, and the +0.88 public
-gap that argued for probe 7 was noise after all. If it was probe 7, the refusal and
-subsection fixes carried through. Either answer is worth recording; the reasoning
-in this document was written before it was known.
+**Resolved — it was probe 7, and by a wider margin than the public board showed.**
+The question below was written before the private scores were released:
+
+> which of the two selected arms actually produced 81.39. If it was
+> `probe-3-section-number`, the deterministic floor beat the mechanism-justified arm
+> on the held-out split, and the +0.88 public gap that argued for probe 7 was noise
+> after all. If it was probe 7, the refusal and subsection fixes carried through.
+
+| | private | public |
+|---|---|---|
+| `probe-7-subsection-fix-retry` | **81.39** | 80.15 |
+| `probe-3-section-number` | 79.77 | 79.27 |
+| gap | **+1.62** | +0.88 |
+
+The refusal template alone is worth **+1.36 private against +0.56 public** — 2.43×.
+The argument below predicted that direction ("the private split favours it
+slightly") and understated the size. See D-053: the public gap was not noise, and
+the calibration rule that called it noise has been retracted.
 
 Two submissions selected manually. **Unchanged by probe 6b** — see the closing
 measurement below, which tested the full generative arm and retired it. Kaggle's auto-selection was **not** allowed to

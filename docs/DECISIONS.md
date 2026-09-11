@@ -1846,3 +1846,87 @@ fine. They were passing for a reason that had nothing to do with the code.
 **Rejected alternative:** vendoring the competition data to make CI exercise
 everything. The rules prohibit redistributing it, and a green badge that required
 breaking them would be worth less than an honest one with 28 skips.
+
+---
+
+## D-053 — The calibration rule was fitted to the public split's noise. Retracted.
+
+**Date:** 2026-09-11 · **Phase:** 5 (close-out) · **Status:** settled ·
+**Retracts:** D-044's shrinkage rule, and the "systematic over-prediction" reading
+
+Private scores released at close. Full table in `SUBMISSION_LOG.md`.
+
+**What D-044 claimed.** Four consecutive probes landed at a falling fraction of
+their predicted effect — 0.93, 0.70, 0.37, 0.21 — and the conclusion drawn was that
+mechanism reasoning over-predicts systematically, with a shrinkage rule to correct
+for it: ×0.90 above 10 points, ×0.70 for 3–10, ×0.30 below 3.
+
+**What the private split shows.** Probe 6a's pre-registered prediction was "+1 to +2
+realistic". Public returned **+0.56** (ratio 0.37). Private returned **+1.36** —
+*inside the original band*.
+
+| probe | predicted | public | private |
+|---|---|---|---|
+| 6a refusals | +1 to +2 | +0.56 (0.37×) | **+1.36 (~0.9×)** |
+| 7 subsection | +0.6 to +0.9 | +0.32 (0.21×) | +0.26 (0.35×) |
+| 6b generative | +3.6 | −0.02 (0.00×) | +0.17 (0.05×) |
+
+The prediction was not wrong. The instrument could not resolve it. A ~20-question
+public sample cannot measure a per-question effect confined to the 28% of questions
+that are adversarial, and the refusal template's true effect turns out to be **2.43×
+larger on the private 30** than the public 20 reported.
+
+**The error has the same shape as the three already logged.** Each of those was a
+comparison where more than one thing varied. This one is a trend fitted across four
+points without asking whether the *measuring instrument* was constant — it was, and
+it was the problem. Four ratios from one noisy 20-question sample is not four
+observations of a bias; it is one observation of a sample.
+
+**What survives.** Probe 6b's failure. It was predicted from local proxies at +3.6
+and returned +0.17 private, −0.02 public — no split rescues it, and D-050 stands
+unchanged. Proxy-derived predictions still get direction only.
+
+**What does not.** The shrinkage rule, and any claim that mechanism reasoning
+over-predicts. On the split that decided the rank it was accurate. The rule was also
+*acted on*: probe 7's prediction was deliberately shrunk to +0.6–0.9 because of it.
+
+**Uncomfortable corollary.** D-045 and `FINAL_SUBMISSION.md` chose probe 7 on
+mechanism while explicitly declining to treat its +0.88 public gap as evidence,
+calling both contributing probes inconclusive. That reasoning was right and the
+number was right too — it was the *noise estimate* that was wrong. Being correct for
+partly wrong reasons is worth recording as precisely as being wrong.
+
+---
+
+## D-054 — The selection strategy, scored
+
+**Date:** 2026-09-11 · **Phase:** 5 (close-out) · **Status:** settled
+
+**Final: 5th place, 81.39 private against 80.15 public. Leader 87.34.**
+
+Two submissions were selected by hand, and Kaggle's auto-selection — which picks by
+best public score — was refused, because the previous competition was lost by
+finishing 1st public and 5th private.
+
+| | private | public |
+|---|---|---|
+| `probe-7-subsection-fix-retry` (slot 1) | **81.39** | 80.15 |
+| `probe-3-section-number` (slot 2, deterministic floor) | 79.77 | 79.27 |
+| gap | **+1.62** | +0.88 |
+
+**The mechanism-justified arm won, and by 1.84× the margin the public board
+showed.** Slot 1 was chosen on the argument that it fixes two identified classes of
+error — policy dumps instead of refusals, and the wrong `###` passage — found
+against the hand-built holdout before any submission. The public gap was dismissed
+as sub-noise at the time. It was real, and larger than it looked.
+
+**What this does and does not establish.** It rules out the failure mode the project
+was built to avoid: the score rose on the held-out split and the rank held while
+2nd–4th reshuffled. It is one competition and one split, so it is not a validated
+method. And the 5.95 points to the leader are unexplained by anything here — no
+amount of selection discipline closes that gap, and nothing in this repository knows
+what the top four did differently.
+
+Auto-selection, for the record, would have chosen the same slot 1 (it was also the
+best public score). The discipline cost nothing and bought the deterministic floor
+in slot 2, which is the insurance that was never claimed.
