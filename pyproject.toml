@@ -15,10 +15,31 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Only the diagnostic script and the groundedness proxy need a local embedding model.
-# Nothing in the core package imports sentence-transformers.
+# The core dependencies above are deliberately tiny: the corpus loader, the answer
+# key, the scorer and the submission writer need nothing but pandas/numpy/yaml, and
+# every heavier import in the package is lazy and behind one of these extras.
+#
+# `retrieval` is what the test suite needs. It was missing until the repository was
+# prepared for publication, and its absence was invisible locally — the packages
+# were installed globally, so `pip install -e ".[dev]"` in a clean environment
+# failed with 15 import errors that nobody here would ever have seen. Declared
+# dependencies are a claim about a machine that is not yours.
+retrieval = [
+    "faiss-cpu>=1.7",
+    "rank-bm25>=0.2",
+    "langchain-text-splitters>=0.2",
+]
+# Local embedding model: the diagnostic script and the groundedness proxy only.
 embed = ["sentence-transformers>=2.2"]
-dev = ["pytest>=8.0"]
+# Generative answers and the LLM router/judge.
+llm = ["groq>=0.11"]
+# Notebook export and the test that executes the exported notebook end to end.
+notebook = ["nbformat>=5.9", "nbclient>=0.9"]
+dev = [
+    "pytest>=8.0",
+    "proctoriq-rag[retrieval,notebook]",
+]
+all = ["proctoriq-rag[retrieval,embed,llm,notebook,dev]"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

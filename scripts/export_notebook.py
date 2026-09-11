@@ -260,6 +260,14 @@ GROQ_MODEL   = "openai/gpt-oss-120b"   # llama-3.1-8b-instant was removed by Gro
 
 # --- paths (overridable so the notebook can be executed and tested off-Kaggle) ---
 import os
+
+# Kaggle images ship TensorFlow. `transformers` probes for it at import time and
+# raises on Keras 3 without the `tf-keras` shim — a failure with nothing to do
+# with this pipeline, which is PyTorch end to end. Set before any HuggingFace
+# import; transformers caches the result on first read.
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("USE_FLAX", "0")
+
 INPUT_ROOT   = os.environ.get("PROCTORIQ_INPUT_ROOT", "/kaggle/input")
 WORKING_ROOT = os.environ.get("PROCTORIQ_WORKING_ROOT", "/kaggle/working")
 '''))

@@ -1802,3 +1802,47 @@ the `EXPECTED_ARM` it was actually submitted with.
 **Alternative rejected:** making the flag work in generative mode by focusing the
 passages sent to the prompt. That is a behaviour change disguised as a bug fix,
 and probe 6b has since retired the generative path anyway.
+
+---
+
+## D-052 — Publication: three defects that only a machine other than this one could find
+
+**Date:** 2026-09-11 · **Phase:** 5 (close-out) · **Status:** settled
+
+**Final result: 5th place, 81.39, against a public 80.15.** The score rose on the
+held-out split and the rank held while 2nd-4th reshuffled. That is the outcome the
+selection discipline in `FINAL_SUBMISSION.md` was designed for, and it is one data
+point, not a validated method.
+
+Preparing the repository for publication surfaced three defects, none of which was
+visible from inside the environment that built it.
+
+**1. Undeclared dependencies.** `pip install -e ".[dev]"` in a clean virtualenv
+failed with 15 import errors. `faiss`, `rank_bm25` and `langchain_text_splitters`
+are imported by the retrieval layer and the test suite and were declared in no
+extra at all — they had been installed globally on the development machine since
+Phase 1, so every local run passed. Fixed by splitting extras into `retrieval` /
+`embed` / `llm` / `notebook` / `dev` / `all`, and verified by running the suite in
+a fresh venv with the data hidden.
+
+**2. A TensorFlow probe inside `transformers`.** Four chunking tests began failing
+with `ValueError: ... Keras 3 ... install tf-keras`, with no change to this
+repository — an unrelated package upgrade had pulled TensorFlow into the
+environment, and `transformers` probes for it at import time. Nothing here uses
+TensorFlow; the whole stack is PyTorch. **Kaggle images ship TensorFlow as
+standard**, so the submitted notebook was one dependency resolution away from the
+same failure, on the artefact that cannot be re-run after commit. Fixed by setting
+`USE_TF=0` / `USE_FLAX=0` in `proctoriq_rag/__init__.py` and in the notebook's
+first cell, before any HuggingFace import.
+
+**3. No CI.** A test suite that only ever runs on one machine is a claim about that
+machine. The workflow now runs on 3.10 / 3.11 / 3.12 without the competition data —
+28 tests skip, the rest run, including both leakage guards.
+
+The pattern is the same one the whole project has been about: **an artefact that
+looks correct is worse than one that fails.** 529 passing tests said the code was
+fine. They were passing for a reason that had nothing to do with the code.
+
+**Rejected alternative:** vendoring the competition data to make CI exercise
+everything. The rules prohibit redistributing it, and a green badge that required
+breaking them would be worth less than an honest one with 28 skips.

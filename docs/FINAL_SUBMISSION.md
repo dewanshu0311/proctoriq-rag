@@ -1,6 +1,27 @@
 # Final Submission — Selected
 
-**Final standing: 80.15 public. Leader 87.00.**
+**Result: 5th place, 81.39 final. Leader 87.34.**
+
+| | public (~20 q) | final (held-out) | |
+|---|---|---|---|
+| score | 80.15 | **81.39** | **+1.24** |
+| rank | 5th | **5th** | held while 2nd-4th reshuffled |
+
+**The selection strategy worked.** The whole point of refusing Kaggle's
+auto-selection, keeping one deterministic floor, and declining to tune against a
+20-question public sample was to avoid a private-split collapse. The score rose
+and the rank held, while three of the four competitors above moved.
+
+That is a weak signal on its own — one competition, one split, and the gap to the
+leader is 5.95 points that no amount of selection discipline would have closed.
+What it does rule out is the failure mode this project was built to avoid.
+
+**Open question worth checking on the Submissions tab:** which of the two selected
+arms actually produced 81.39. If it was `probe-3-section-number`, the deterministic
+floor beat the mechanism-justified arm on the held-out split, and the +0.88 public
+gap that argued for probe 7 was noise after all. If it was probe 7, the refusal and
+subsection fixes carried through. Either answer is worth recording; the reasoning
+in this document was written before it was known.
 
 Two submissions selected manually. **Unchanged by probe 6b** — see the closing
 measurement below, which tested the full generative arm and retired it. Kaggle's auto-selection was **not** allowed to

@@ -1,13 +1,31 @@
 # ProctorIQ RAG
 
+[![tests](https://github.com/USERNAME/proctoriq-rag-challenge/actions/workflows/ci.yml/badge.svg)](https://github.com/USERNAME/proctoriq-rag-challenge/actions/workflows/ci.yml)
+[![python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](pyproject.toml)
+[![licence](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
+
 A retrieval-augmented generation pipeline for proctored-assessment support, built
 for the NIAT "Building & Optimizing RAG" Kaggle challenge.
 
-**Final: 80.15 public.** Leader 87.00.
+**Final: 5th place, 81.39.** Leader 87.34.
+
+The number that mattered more was this one:
+
+| | public (~20 questions) | final (held-out) | |
+|---|---|---|---|
+| score | 80.15 | **81.39** | **+1.24** |
+| rank | 5th | **5th** | held, while 2nd–4th reshuffled |
+
+The score went **up** on the split that decides the rank. That was the explicit
+design goal — the previous competition was lost by finishing 1st on the public
+leaderboard and 5th on the private one — and it is why Kaggle's auto-selection,
+which picks by best public score, was never allowed to choose here.
 
 More interestingly, this is a case study in measuring a system that ships **no
 ground truth** — and in the several ways that measurement went wrong before it went
-right.
+right. The most useful result in the repository is a negative one about its own
+method: [three instruments with deliberately opposite biases all agreed, and all
+three were wrong](#three-instruments-agreed-and-all-three-were-wrong).
 
 ---
 
@@ -237,8 +255,12 @@ competition actually contains. **Naming a bias is not controlling for it.**
 Requires Python ≥ 3.10.
 
 ```bash
-pip install -e ".[dev,embed]"
+pip install -e ".[all]"
 ```
+
+Extras are split so the core stays tiny: `retrieval` (faiss, BM25, splitters),
+`embed` (sentence-transformers), `llm` (Groq), `notebook`, `dev`. The extractive
+path needs no LLM and no API key.
 
 ```bash
 python -m pytest
@@ -280,6 +302,27 @@ extractive path needs no key at all.
 
 ## Status
 
-**Complete.** 508 tests passing. Two submissions selected:
-`probe-7-subsection-fix-retry` (80.15) and `probe-3-section-number` (79.27, tagged
-`v1.0-locked-79.27`, deterministic, no runtime LLM dependency).
+**Complete.** 529 tests, 51 logged decisions, 9 leaderboard probes.
+
+Two submissions were selected by hand: `probe-7-subsection-fix-retry` (80.15
+public) and `probe-3-section-number` (79.27 public, tagged `v1.0-locked-79.27`,
+deterministic, no runtime LLM dependency). Final: **81.39, 5th place.**
+
+### If you are reading this repository rather than running it
+
+Start with [`docs/DECISIONS.md`](docs/DECISIONS.md). The code is ordinary; the
+decision log is the artefact. It records every alternative considered, every
+measured negative, and every retraction — including three measurement errors of
+the same shape, a prediction that was wrong by its full magnitude, and a guard
+that passed a submission it should have stopped.
+
+### Reproducing
+
+The competition data is not redistributable. With it in place:
+
+```bash
+pip install -e ".[all]" && python -m pytest && python scripts/export_notebook.py
+```
+
+Without it, the suite still runs — 28 data-dependent tests skip and the rest pass.
+That is what CI does on every push.

@@ -1,0 +1,45 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    name: python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # The competition data is not redistributable, so `data/raw/` is absent here.
+      # Tests that need it are marked `requires_competition_data` and skip cleanly;
+      # roughly 28 of them do. Everything else — the format matrix, the leakage
+      # guards, the scorer, the citation strategies, the submission writer — runs
+      # on fixtures and runs here.
+      #
+      # This job exists to catch one specific class of bug: the kind that is
+      # invisible on the author's machine. It already caught two — undeclared
+      # faiss/rank-bm25/langchain dependencies, and a TensorFlow probe inside
+      # transformers that broke four tests when an unrelated package upgraded.
+      - name: Run tests
+        run: pytest -q
+
+      - name: Holdout leakage guards
+        run: pytest -q tests/test_no_key_leakage.py tests/test_no_key_leakage_scripts.py
